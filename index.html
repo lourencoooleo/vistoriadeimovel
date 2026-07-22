@@ -233,16 +233,16 @@ select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
       <div class="divider"></div>
       <div class="medidor-card">
         <div class="medidor-title">⚡ Medidor de Energia</div>
-        <div class="field"><label>Leitura (kWh) <span class="req">*</span></label><input type="text" id="inp-energia" placeholder="Ex: 00142" inputmode="numeric"></div>
-        <div class="field" style="margin-bottom:0;"><label>Foto do medidor <span class="req">*</span></label>
+        <div class="field"><label>Leitura (kWh)</label><input type="text" id="inp-energia" placeholder="Ex: 00142" inputmode="numeric"></div>
+        <div class="field" style="margin-bottom:0;"><label>Foto do medidor (opcional)</label>
           <label class="upload-label"><input type="file" accept="image/*" capture="environment" id="upload-energia" onchange="handleMedidor(this,'energia')"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--sky)" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><div><div class="upload-label-text">Tirar foto ou escolher</div><div class="upload-label-sub">Medidor de energia</div></div></label>
           <div class="preview-grid" id="prev-energia"></div>
         </div>
       </div>
       <div class="medidor-card">
         <div class="medidor-title">💧 Hidrômetro</div>
-        <div class="field"><label>Leitura (m³) <span class="req">*</span></label><input type="text" id="inp-agua" placeholder="Ex: 00089" inputmode="numeric"></div>
-        <div class="field" style="margin-bottom:0;"><label>Foto do hidrômetro <span class="req">*</span></label>
+        <div class="field"><label>Leitura (m³)</label><input type="text" id="inp-agua" placeholder="Ex: 00089" inputmode="numeric"></div>
+        <div class="field" style="margin-bottom:0;"><label>Foto do hidrômetro (opcional)</label>
           <label class="upload-label"><input type="file" accept="image/*" capture="environment" id="upload-agua" onchange="handleMedidor(this,'agua')"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--sky)" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><div><div class="upload-label-text">Tirar foto ou escolher</div><div class="upload-label-sub">Hidrômetro de água</div></div></label>
           <div class="preview-grid" id="prev-agua"></div>
         </div>
@@ -320,44 +320,16 @@ var S = {
   fotosComodo:{}, fotosMedidor:{energia:null,agua:null}, fotosGerais:[]
 };
 
-// Apps Script não suporta CORS em POST externo.
-// Solução: JSONP via GET com payload na query string.
-// Para vistoria (payload grande com fotos), divide em duas chamadas:
-// 1. Upload das fotos separado
-// 2. Dados textuais via GET
-
-function api(acao, body) {
-  return new Promise(function(resolve, reject) {
-    // Dados sem fotos para chamadas normais
-    var payload = JSON.stringify(Object.assign({ acao: acao }, body));
-    var cbName = 'cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-    var script = document.createElement('script');
-
-    window[cbName] = function(data) {
-      delete window[cbName];
-      document.body.removeChild(script);
-      resolve(data);
-    };
-
-    script.onerror = function() {
-      delete window[cbName];
-      try { document.body.removeChild(script); } catch(e) {}
-      reject(new Error('Erro de rede'));
-    };
-
-    // Timeout de 60s para vistorias com fotos
-    var timeout = setTimeout(function() {
-      delete window[cbName];
-      try { document.body.removeChild(script); } catch(e) {}
-      reject(new Error('Timeout'));
-    }, 60000);
-
-    script.onload = function() { clearTimeout(timeout); };
-
-    var url = BACKEND_URL + '?callback=' + cbName + '&payload=' + encodeURIComponent(payload);
-    script.src = url;
-    document.body.appendChild(script);
+// fetch POST direto — sem JSONP, sem CORS workaround
+// O Apps Script com "Executar como: Eu / Acesso: Qualquer pessoa"
+// aceita POST de qualquer origem quando configurado corretamente.
+async function api(acao, body) {
+  var res = await fetch(BACKEND_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(Object.assign({ acao: acao }, body))
   });
+  return res.json();
 }
 
 window.onload = function() {
@@ -427,29 +399,147 @@ var ICONES = {
 function slugify(s){return s.replace(/[^a-zA-Z0-9]/g,'_').substring(0,60);}
 
 function gerarComodos(imovel) {
-  var container = document.getElementById('secoesComodos'); container.innerHTML='';
-  imovel.comodos.forEach(function(comodo,ci){
-    var sec=document.createElement('div'); sec.className='section-card'; sec.id='sec-c'+ci;
-    var itensHtml=comodo.itens.map(function(item){
-      var chave=slugify(comodo.nome+'__'+item);
-      return '<div class="item-block">'
-        +'<div class="item-header"><span style="color:var(--sky);font-size:10px;">●</span><span class="item-name">'+item+'</span></div>'
-        +'<div class="item-body">'
-        +'<div class="estado-label">Estado de conservação</div>'
-        +'<div class="estado-group">'
-        +[['Ótimo','otimo'],['Bom','bom'],['Regular','reg'],['Ruim','ruim'],['N/A','na']].map(function(e){
-          return '<button class="estado-btn" data-chave="'+chave+'" data-estado="'+e[0]+'" onclick="selEstado(this)"><span class="dot"></span>'+e[0]+'</button>';
-        }).join('')
-        +'</div>'
-        +'<textarea class="obs-input" id="obs-'+chave+'" placeholder="Observações (opcional)..."></textarea>'
-        +'<div style="margin-top:10px;">'
-        +'<label class="upload-label"><input type="file" accept="image/*" multiple style="display:none;" onchange="handleItem(this,\''+comodo.nome.replace(/'/g,"\\'")+'}\',\''+item.replace(/'/g,"\\'")+'\',\''+chave+'\')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sky)" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><div><div class="upload-label-text">Adicionar fotos</div><div class="upload-label-sub">Até 5 por item</div></div></label>'
-        +'<div class="preview-grid" id="prev-'+chave+'"></div>'
-        +'</div></div></div>';
-    }).join('');
-    sec.innerHTML='<div class="section-header">'+(ICONES[comodo.icone]||ICONES.outdoor)+'<div><h2>'+comodo.nome+'</h2><p>'+comodo.itens.length+' itens</p></div></div>'
-      +'<div class="section-body">'+itensHtml+'</div>'
-      +'<div class="nav-bar"><button class="btn btn-secondary" onclick="voltar()">←</button><button class="btn btn-primary" onclick="avancar()">Próximo →</button></div>';
+  var container = document.getElementById('secoesComodos');
+  container.innerHTML = '';
+  imovel.comodos.forEach(function(comodo, ci) {
+    var sec = document.createElement('div');
+    sec.className = 'section-card';
+    sec.id = 'sec-c' + ci;
+
+    // Header
+    var hdr = document.createElement('div');
+    hdr.className = 'section-header';
+    hdr.innerHTML = (ICONES[comodo.icone] || ICONES.outdoor)
+      + '<div><h2>' + comodo.nome + '</h2><p>' + comodo.itens.length + ' itens</p></div>';
+    sec.appendChild(hdr);
+
+    // Body
+    var body = document.createElement('div');
+    body.className = 'section-body';
+
+    comodo.itens.forEach(function(item) {
+      var chave = slugify(comodo.nome + '__' + item);
+
+      var bloco = document.createElement('div');
+      bloco.className = 'item-block';
+
+      // Item header
+      var iHdr = document.createElement('div');
+      iHdr.className = 'item-header';
+      iHdr.innerHTML = '<span style="color:var(--sky);font-size:10px;">●</span><span class="item-name">' + item + '</span>';
+      bloco.appendChild(iHdr);
+
+      // Item body
+      var iBody = document.createElement('div');
+      iBody.className = 'item-body';
+
+      // Label estado — oculto para item de chaves
+      if (item.indexOf('Chaves entregues') !== 0) {
+        var elabel = document.createElement('div');
+        elabel.className = 'estado-label';
+        elabel.textContent = 'Estado de conservação';
+        iBody.appendChild(elabel);
+
+        var eGroup = document.createElement('div');
+        eGroup.className = 'estado-group';
+        [['Ótimo','otimo'],['Bom','bom'],['Regular','reg'],['Ruim','ruim'],['N/A','na']].forEach(function(e) {
+          var btn = document.createElement('button');
+          btn.className = 'estado-btn';
+          btn.dataset.chave = chave;
+          btn.dataset.estado = e[0];
+          btn.onclick = function() { selEstado(this); };
+          btn.innerHTML = '<span class="dot"></span>' + e[0];
+          eGroup.appendChild(btn);
+        });
+        iBody.appendChild(eGroup);
+      }
+
+      // Item especial: Chaves entregues — vira declaração
+      if (item.indexOf('Chaves entregues') === 0) {
+        var chavesWrap = document.createElement('div');
+        chavesWrap.style.cssText = 'background:var(--sky-lite);border:1.5px solid #c3dff4;border-radius:10px;padding:14px;margin-bottom:10px;';
+
+        var chavesLabel = document.createElement('label');
+        chavesLabel.className = 'check-wrap';
+        chavesLabel.style.cssText = 'margin-bottom:12px;background:none;border:none;padding:0;';
+
+        var chavesCheck = document.createElement('input');
+        chavesCheck.type = 'checkbox';
+        chavesCheck.id = 'chk-' + chave;
+
+        var chavesText = document.createElement('span');
+        chavesText.textContent = 'Declaro que as chaves do imóvel foram entregues ao vistoriador nesta data.';
+
+        chavesLabel.appendChild(chavesCheck);
+        chavesLabel.appendChild(chavesText);
+        chavesWrap.appendChild(chavesLabel);
+
+        var chavesDescLabel = document.createElement('label');
+        chavesDescLabel.style.cssText = 'font-size:13px;font-weight:600;color:var(--navy-mid);display:block;margin-bottom:6px;';
+        chavesDescLabel.textContent = 'Descrição das chaves entregues';
+        chavesWrap.appendChild(chavesDescLabel);
+
+        var chavesDesc = document.createElement('textarea');
+        chavesDesc.className = 'obs-input';
+        chavesDesc.id = 'obs-' + chave;
+        chavesDesc.placeholder = 'Ex: 2 chaves da porta principal, 1 chave do portão, 1 controle remoto...';
+        chavesDesc.style.minHeight = '70px';
+        chavesWrap.appendChild(chavesDesc);
+
+        iBody.appendChild(chavesWrap);
+      } else {
+        // Textarea observação padrão
+        var obs = document.createElement('textarea');
+        obs.className = 'obs-input';
+        obs.id = 'obs-' + chave;
+        obs.placeholder = 'Observações (opcional)...';
+        iBody.appendChild(obs);
+      }
+
+      // Upload de fotos — oculto para item de chaves
+      if (item.indexOf('Chaves entregues') === 0) {
+        // nada — o bloco de chaves já foi inserido acima
+      } else {
+      var upWrap = document.createElement('div');
+      upWrap.style.marginTop = '10px';
+
+      var upLabel = document.createElement('label');
+      upLabel.className = 'upload-label';
+      upLabel.style.cursor = 'pointer';
+
+      var upInput = document.createElement('input');
+      upInput.type = 'file';
+      upInput.accept = 'image/*';
+      upInput.multiple = true;
+      upInput.style.display = 'none';
+      // Closure correto — sem strings inline
+      (function(c, it, ch) {
+        upInput.addEventListener('change', function() { handleItem(this, c, it, ch); });
+      })(comodo.nome, item, chave);
+
+      upLabel.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sky)" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><div><div class="upload-label-text">Adicionar fotos</div><div class="upload-label-sub">Até 5 por item</div></div>';
+      upLabel.insertBefore(upInput, upLabel.firstChild);
+
+      var prevGrid = document.createElement('div');
+      prevGrid.className = 'preview-grid';
+      prevGrid.id = 'prev-' + chave;
+
+      upWrap.appendChild(upLabel);
+      upWrap.appendChild(prevGrid);
+      iBody.appendChild(upWrap);
+      } // fim if não é chaves
+      bloco.appendChild(iBody);
+      body.appendChild(bloco);
+    });
+
+    sec.appendChild(body);
+
+    // Nav bar
+    var nav = document.createElement('div');
+    nav.className = 'nav-bar';
+    nav.innerHTML = '<button class="btn btn-secondary" onclick="voltar()">←</button><button class="btn btn-primary" onclick="avancar()">Próximo →</button>';
+    sec.appendChild(nav);
+
     container.appendChild(sec);
   });
 }
@@ -468,6 +558,10 @@ function selEG(btn,val){
 function lerB64(file){return new Promise(function(res){var r=new FileReader();r.onload=function(e){res(e.target.result);};r.readAsDataURL(file);});}
 
 function handleItem(input,comodo,item,chave){
+  // Suporte a data-attributes (novo) e parâmetros diretos (legado)
+  comodo = comodo || input.dataset.comodo || '';
+  item   = item   || input.dataset.item   || '';
+  chave  = chave  || input.dataset.chave  || slugify(comodo+'__'+item);
   var files=Array.from(input.files).slice(0,5);
   if(!S.fotosComodo[chave])S.fotosComodo[chave]=[];
   var prev=document.getElementById('prev-'+chave);
@@ -506,7 +600,8 @@ function thumb(src,onRemove){
   d.appendChild(img);d.appendChild(btn);return d;
 }
 
-function coletarDados(){
+// Coleta apenas dados textuais (sem base64) — para POST
+function coletarDadosSemFotos(){
   var comodos=S.imovelSel.comodos.map(function(comodo){
     var itens=comodo.itens.map(function(item){
       var chave=slugify(comodo.nome+'__'+item);
@@ -515,11 +610,6 @@ function coletarDados(){
     });
     return{nome:comodo.nome,itens:itens};
   });
-  var fotos=[];
-  Object.values(S.fotosComodo).forEach(function(arr){arr.forEach(function(f){fotos.push(f);});});
-  if(S.fotosMedidor.energia)fotos.push(S.fotosMedidor.energia);
-  if(S.fotosMedidor.agua)fotos.push(S.fotosMedidor.agua);
-  S.fotosGerais.forEach(function(f){fotos.push(f);});
   return{
     imovelId:S.imovelSel.id,
     vistoriador:document.getElementById('inp-vistoriador').value.trim(),
@@ -531,31 +621,72 @@ function coletarDados(){
     pendencias:document.getElementById('inp-pendencias').value.trim(),
     medidorEnergia:document.getElementById('inp-energia').value.trim(),
     hidrometro:document.getElementById('inp-agua').value.trim(),
-    comodos:comodos,fotos:fotos
+    comodos:comodos
   };
+}
+
+// Coleta apenas as fotos (base64) — para upload individual
+function coletarFotos(){
+  var fotos=[];
+  Object.values(S.fotosComodo).forEach(function(arr){arr.forEach(function(f){fotos.push(f);});});
+  if(S.fotosMedidor.energia)fotos.push(S.fotosMedidor.energia);
+  if(S.fotosMedidor.agua)fotos.push(S.fotosMedidor.agua);
+  S.fotosGerais.forEach(function(f){fotos.push(f);});
+  return fotos;
 }
 
 async function enviarVistoria(){
   if(!S.estadoGeral){toast('Selecione o estado geral.','error');return;}
   if(!document.getElementById('sel-condicoes').value){toast('Informe as condições de uso.','error');return;}
-  if(!document.getElementById('inp-energia').value.trim()){toast('Informe a leitura de energia.','error');return;}
-  if(!S.fotosMedidor.energia){toast('Adicione a foto do medidor de energia.','error');return;}
-  if(!document.getElementById('inp-agua').value.trim()){toast('Informe a leitura do hidrômetro.','error');return;}
-  if(!S.fotosMedidor.agua){toast('Adicione a foto do hidrômetro.','error');return;}
+  // Medidores opcionais — sem validação obrigatória
   if(!document.getElementById('chk-declaracao').checked){toast('Confirme a declaração de veracidade.','error');return;}
-  loading(true,'Salvando fotos e gerando PDF...');
+
   document.getElementById('btn-enviar').disabled=true;
-  try{
-    var res=await api('processarVistoria',{dados:coletarDados()});
+  var dados = coletarDadosSemFotos();
+
+  try {
+    // ETAPA 1: Criar pasta no Drive
+    loading(true,'Criando pasta no Drive...');
+    var imovel = S.imoveis.find(function(i){return i.id===dados.imovelId;});
+    var resPasta = await api('criarPastaVistoria',{
+      enderecoImovel: imovel.endereco,
+      tipoVistoria: dados.tipoVistoria,
+      data: dados.data,
+      vistoriador: dados.vistoriador
+    });
+    if(!resPasta.sucesso){throw new Error(resPasta.erro||'Erro ao criar pasta');}
+    var pastaId = resPasta.pastaId;
+
+    // ETAPA 2: Upload das fotos uma a uma
+    var todasFotos = coletarFotos();
+    var total = todasFotos.length;
+    for(var i=0; i<todasFotos.length; i++){
+      var foto = todasFotos[i];
+      loading(true,'Enviando foto '+(i+1)+' de '+total+'...');
+      var nome = (foto.comodo+'_'+foto.item+'_'+(i+1)+'.jpg').replace(/[^a-zA-Z0-9_\-.]/g,'_').substring(0,80);
+      await api('uploadFoto',{ pastaId: pastaId, base64: foto.base64, nome: nome });
+    }
+
+    // ETAPA 3: Gerar PDF e enviar e-mail
+    loading(true,'Gerando PDF e enviando e-mail...');
+    var resFinal = await api('finalizarVistoria',{ dados: dados, pastaId: pastaId });
     loading(false);
-    if(res.sucesso){
+
+    if(resFinal.sucesso){
       var link=document.getElementById('successLink');
-      if(res.urlPasta){link.href=res.urlPasta;link.style.display='block';}
+      if(resFinal.urlPasta){link.href=resFinal.urlPasta;link.style.display='block';}
       document.querySelectorAll('.section-card').forEach(function(el){el.style.display='none';});
       document.getElementById('progressWrap').style.display='none';
       document.getElementById('successScreen').classList.add('show');
-    }else{toast('Erro: '+(res.erro||'Tente novamente.'),'error');document.getElementById('btn-enviar').disabled=false;}
-  }catch(e){loading(false);toast('Erro de conexão.','error');document.getElementById('btn-enviar').disabled=false;}
+    } else {
+      toast('Erro: '+(resFinal.erro||'Tente novamente.'),'error');
+      document.getElementById('btn-enviar').disabled=false;
+    }
+  } catch(e) {
+    loading(false);
+    toast('Erro: '+e.message,'error');
+    document.getElementById('btn-enviar').disabled=false;
+  }
 }
 
 function abrirAdmin(){document.getElementById('adminOverlay').classList.add('open');document.getElementById('adminLogin').style.display='block';document.getElementById('adminPainel').style.display='none';document.getElementById('inp-senha-admin').value='';document.getElementById('login-erro').textContent='';}
