@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f2744">
+<title>Sistema de Vistorias</title>
+<style>
+:root {
+  --navy:     #0f2744;
+  --navy-mid: #1a3a5c;
+  --sky:      #2e7db5;
+  --sky-lite: #e8f3fb;
+  --gold:     #c9a84c;
+  --ok:       #22c55e;
+  --bom:      #3b82f6;
+  --reg:      #f59e0b;
+  --ruim:     #ef4444;
+  --na:       #9ca3af;
+  --bg:       #f0f4f8;
+  --white:    #ffffff;
+  --text:     #1f2937;
+  --muted:    #6b7280;
+  --border:   #dde3ea;
+  --radius:   12px;
+  --shadow:   0 2px 16px rgba(15,39,68,.10);
+  --tap:      48px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html { scroll-behavior: smooth; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 16px; -webkit-font-smoothing: antialiased; }
+
+.header { background: var(--navy); color: #fff; padding: 0 16px; height: 56px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+.header svg { flex-shrink: 0; opacity: .9; }
+.header-title { font-size: 17px; font-weight: 700; letter-spacing: -.3px; }
+
+.progress-wrap { background: var(--navy-mid); padding: 10px 16px; position: sticky; top: 56px; z-index: 99; }
+.progress-info { display: flex; justify-content: space-between; font-size: 12px; color: rgba(255,255,255,.75); margin-bottom: 6px; }
+.progress-bar { height: 4px; background: rgba(255,255,255,.2); border-radius: 2px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--gold); border-radius: 2px; transition: width .4s ease; }
+
+.main { padding: 16px 12px 100px; max-width: 640px; margin: 0 auto; }
+
+.section-card { background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; display: none; }
+.section-card.active { display: block; }
+.section-header { background: var(--navy); color: #fff; padding: 16px; display: flex; align-items: center; gap: 12px; }
+.section-header svg { flex-shrink: 0; opacity: .9; }
+.section-header h2 { font-size: 17px; font-weight: 700; }
+.section-header p { font-size: 12px; opacity: .65; margin-top: 2px; }
+.section-body { padding: 16px; }
+
+.field { margin-bottom: 18px; }
+.field label { display: block; font-size: 14px; font-weight: 600; color: var(--navy-mid); margin-bottom: 6px; }
+.req { color: var(--ruim); }
+
+input[type=text], input[type=date], select, textarea {
+  width: 100%; padding: 12px 14px; border: 1.5px solid var(--border); border-radius: 10px;
+  font-size: 16px; color: var(--text); background: var(--white); font-family: inherit;
+  transition: border-color .2s; appearance: none; -webkit-appearance: none;
+}
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--sky); box-shadow: 0 0 0 3px rgba(46,125,181,.12); }
+textarea { resize: none; min-height: 80px; }
+select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
+
+.item-block { border: 1.5px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; }
+.item-header { background: var(--sky-lite); padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+.item-name { font-size: 14px; font-weight: 600; color: var(--navy-mid); line-height: 1.3; }
+.item-body { padding: 14px; }
+
+.estado-label { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .5px; }
+.estado-group { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 12px; }
+.estado-btn { min-height: var(--tap); border-radius: 8px; border: 2px solid var(--border); font-size: 11px; font-weight: 700; cursor: pointer; background: var(--bg); color: var(--muted); padding: 6px 2px; transition: all .15s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; line-height: 1.2; text-align: center; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.estado-btn:active { transform: scale(.95); }
+.estado-btn.sel-otimo { background: var(--ok);   color: #fff; border-color: var(--ok); }
+.estado-btn.sel-bom   { background: var(--bom);  color: #fff; border-color: var(--bom); }
+.estado-btn.sel-reg   { background: var(--reg);  color: #fff; border-color: var(--reg); }
+.estado-btn.sel-ruim  { background: var(--ruim); color: #fff; border-color: var(--ruim); }
+.estado-btn.sel-na    { background: var(--na);   color: #fff; border-color: var(--na); }
+
+.upload-label { display: flex; align-items: center; gap: 10px; background: var(--sky-lite); border: 2px dashed #a8d0ed; border-radius: 10px; padding: 14px; cursor: pointer; min-height: var(--tap); transition: background .2s; }
+.upload-label:active { background: #d4e9f7; }
+.upload-label input { display: none; }
+.upload-label-text { font-size: 14px; color: var(--sky); font-weight: 600; }
+.upload-label-sub { font-size: 12px; color: var(--muted); }
+
+.preview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px,1fr)); gap: 8px; margin-top: 10px; }
+.preview-thumb { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; border: 1.5px solid var(--border); }
+.preview-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.remove-btn { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,.65); color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+.obs-input { width: 100%; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 15px; color: var(--text); font-family: inherit; resize: none; min-height: 60px; background: var(--white); transition: border-color .2s; }
+.obs-input:focus { outline: none; border-color: var(--sky); }
+
+.nav-bar { display: flex; justify-content: space-between; gap: 12px; padding: 14px 16px; border-top: 1px solid var(--border); background: var(--white); }
+.btn { min-height: var(--tap); padding: 0 20px; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; border: none; display: flex; align-items: center; justify-content: center; gap: 6px; transition: opacity .15s, transform .1s; flex: 1; }
+.btn:active { transform: scale(.97); opacity: .9; }
+.btn:disabled { opacity: .45; pointer-events: none; }
+.btn-primary   { background: var(--sky);   color: #fff; }
+.btn-secondary { background: var(--white); color: var(--navy-mid); border: 1.5px solid var(--border); flex: 0 0 auto; padding: 0 18px; }
+.btn-success   { background: var(--ok);    color: #fff; }
+.btn-danger    { background: var(--ruim);  color: #fff; }
+.btn-sm { min-height: 38px; font-size: 13px; flex: 0 0 auto; padding: 0 14px; border-radius: 8px; }
+
+.eg-group { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+.eg-btn { min-height: 72px; border-radius: 10px; border: 2px solid var(--border); background: var(--white); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--muted); transition: all .15s; }
+.eg-btn:active { transform: scale(.97); }
+.eg-btn.sel { color: #fff; }
+.eg-icon { font-size: 24px; }
+.eg-otimo.sel { background: var(--ok);   border-color: var(--ok); }
+.eg-bom.sel   { background: var(--bom);  border-color: var(--bom); }
+.eg-reg.sel   { background: var(--reg);  border-color: var(--reg); }
+.eg-ruim.sel  { background: var(--ruim); border-color: var(--ruim); }
+
+.medidor-card { background: var(--sky-lite); border: 1.5px solid #c3dff4; border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+.medidor-title { font-size: 14px; font-weight: 700; color: var(--navy-mid); margin-bottom: 12px; }
+
+.check-wrap { display: flex; gap: 12px; align-items: flex-start; padding: 14px; background: var(--sky-lite); border-radius: 10px; border: 1.5px solid #c3dff4; cursor: pointer; }
+.check-wrap input[type=checkbox] { width: 22px; height: 22px; flex-shrink: 0; margin-top: 1px; accent-color: var(--sky); cursor: pointer; }
+.check-wrap span { font-size: 13px; color: var(--navy-mid); line-height: 1.5; }
+
+.success-screen { display: none; text-align: center; padding: 48px 24px; }
+.success-screen.show { display: block; }
+.success-icon { font-size: 72px; margin-bottom: 16px; }
+.success-screen h2 { font-size: 22px; color: var(--navy); margin-bottom: 8px; font-weight: 700; }
+.success-screen p { color: var(--muted); font-size: 15px; margin-bottom: 24px; }
+
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(15,39,68,.75); z-index: 200; align-items: flex-end; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--white); border-radius: 20px 20px 0 0; width: 100%; max-height: 92vh; overflow-y: auto; padding-bottom: env(safe-area-inset-bottom,20px); animation: slideUp .3s ease; }
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.modal-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 12px auto 0; }
+.modal-header { padding: 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+.modal-header h2 { font-size: 17px; font-weight: 700; color: var(--navy); }
+.modal-close { background: var(--bg); border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.modal-body { padding: 16px; }
+
+.admin-tabs { display: flex; gap: 4px; margin-bottom: 16px; background: var(--bg); padding: 4px; border-radius: 10px; }
+.admin-tab { flex: 1; padding: 10px 4px; border: none; background: none; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; border-radius: 8px; transition: all .15s; }
+.admin-tab.active { background: var(--white); color: var(--sky); box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+
+.imovel-card { border: 1.5px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }
+.imovel-card h3 { font-size: 14px; font-weight: 700; color: var(--navy-mid); margin-bottom: 4px; line-height: 1.3; }
+.imovel-card p { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+.imovel-card-actions { display: flex; gap: 8px; }
+.badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.badge-ativo   { background: #dcfce7; color: #166534; }
+.badge-inativo { background: #fee2e2; color: #991b1b; }
+
+.comodo-edit { border: 1.5px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 10px; background: var(--bg); }
+.comodo-edit-header { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.item-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--sky-lite); border: 1px solid #c3dff4; border-radius: 20px; padding: 4px 10px; font-size: 12px; color: var(--sky); font-weight: 600; margin: 3px; }
+.item-tag button { background: none; border: none; color: var(--sky); cursor: pointer; font-size: 14px; line-height: 1; padding: 0; min-height: 20px; }
+
+.login-wrap { padding: 8px 0 16px; }
+.login-wrap h3 { font-size: 18px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
+.login-wrap p { font-size: 14px; color: var(--muted); margin-bottom: 20px; }
+
+.loading-overlay { display: none; position: fixed; inset: 0; background: rgba(15,39,68,.88); z-index: 300; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: #fff; }
+.loading-overlay.open { display: flex; }
+.spinner { width: 48px; height: 48px; border: 4px solid rgba(255,255,255,.2); border-top-color: var(--gold); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-msg { font-size: 15px; font-weight: 600; text-align: center; padding: 0 32px; }
+
+.toast { position: fixed; bottom: 24px; left: 16px; right: 16px; background: var(--navy); color: #fff; padding: 14px 18px; border-radius: 12px; font-size: 14px; font-weight: 600; box-shadow: 0 4px 20px rgba(0,0,0,.3); transform: translateY(80px); transition: transform .3s ease; z-index: 400; text-align: center; }
+.toast.success { background: #16a34a; }
+.toast.error   { background: var(--ruim); }
+.toast.show    { transform: translateY(0); }
+
+.footer { text-align: center; padding: 20px 16px; font-size: 12px; color: var(--muted); }
+.footer button { background: none; border: none; color: var(--muted); font-size: 12px; cursor: pointer; text-decoration: underline; min-height: var(--tap); padding: 0 8px; }
+.divider { height: 1px; background: var(--border); margin: 16px 0; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <svg width="28" height="28" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="rgba(255,255,255,0.1)"/><path d="M16 5L5 13V27H12V20H20V27H27V13L16 5Z" fill="#c9a84c"/></svg>
+  <div class="header-title">Sistema de Vistorias</div>
+</header>
+
+<div class="progress-wrap" id="progressWrap">
+  <div class="progress-info"><span id="progressLabel">Identificação</span><span id="progressCount">1 de 1</span></div>
+  <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+</div>
+
+<main class="main">
+
+  <div class="success-screen" id="successScreen">
+    <div class="success-icon">checkmark</div>
+    <h2>Vistoria registrada!</h2>
+    <p id="successMsg">PDF enviado por e-mail e fotos salvas no Google Drive.</p>
+    <a id="successLink" href="#" target="_blank" style="display:none;text-decoration:none;"><button class="btn btn-primary" style="margin:0 auto 16px;max-width:280px;">Abrir pasta no Drive</button></a>
+    <br><button class="btn btn-secondary" style="max-width:200px;margin:0 auto;" onclick="location.reload()">Nova Vistoria</button>
+  </div>
+
+  <div class="section-card active" id="sec-0">
+    <div class="section-header">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <div><h2>Identificação</h2><p>Dados gerais da vistoria</p></div>
+    </div>
+    <div class="section-body">
+      <div class="field"><label>Imóvel <span class="req">*</span></label><select id="sel-imovel"><option value="">Carregando...</option></select></div>
+      <div class="field"><label>Vistoriador <span class="req">*</span></label><input type="text" id="inp-vistoriador" placeholder="Nome completo" autocomplete="name"></div>
+      <div class="field"><label>Data <span class="req">*</span></label><input type="date" id="inp-data"></div>
+      <div class="field"><label>Tipo</label><select id="sel-tipo"><option value="Entrada">Entrada</option><option value="Saída">Saída</option></select></div>
+      <div class="field"><label>Observações iniciais</label><textarea id="inp-obs-ini" placeholder="Condições na chegada, clima, etc."></textarea></div>
+    </div>
+    <div class="nav-bar" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="avancar()">Próximo →</button></div>
+  </div>
+
+  <div id="secoesComodos"></div>
+
+  <div class="section-card" id="sec-final">
+    <div class="section-header">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      <div><h2>Conclusão</h2><p>Estado geral, medidores e declaração</p></div>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <label>Estado geral do imóvel <span class="req">*</span></label>
+        <div class="eg-group">
+          <button class="eg-btn eg-otimo" onclick="selEG(this,'Ótimo')"><span class="eg-icon">🟢</span>Ótimo</button>
+          <button class="eg-btn eg-bom"   onclick="selEG(this,'Bom')"><span class="eg-icon">🔵</span>Bom</button>
+          <button class="eg-btn eg-reg"   onclick="selEG(this,'Regular')"><span class="eg-icon">🟡</span>Regular</button>
+          <button class="eg-btn eg-ruim"  onclick="selEG(this,'Ruim')"><span class="eg-icon">🔴</span>Ruim</button>
+        </div>
+      </div>
+      <div class="field"><label>Condições de uso imediato <span class="req">*</span></label><select id="sel-condicoes"><option value="">Selecione...</option><option>Sim</option><option>Sim, com ressalvas</option><option>Não</option></select></div>
+      <div class="field"><label>Pendências ou ressalvas</label><textarea id="inp-pendencias" placeholder="Descreva problemas ou pendências..."></textarea></div>
+      <div class="divider"></div>
+      <div class="medidor-card">
+        <div class="medidor-title">⚡ Medidor de Energia</div>
+        <div class="field"><label>Leitura (kWh) <span class="req">*</span></label><input type="text" id="inp-energia" placeholder="Ex: 00142" inputmode="numeric"></div>
+        <div class="field" style="margin-bottom:0;"><label>Foto do medidor <span class="req">*</span></label>
+          <label class="upload-label"><input type="file" accept="image/*" capture="environment" id="upload-energia" onchange="handleMedidor(this,'energia')"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--sky)" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><div><div class="upload-label-text">Tirar foto ou escolher</div><div class="upload-label-sub">Medidor de energia</div></div></label>
+          <div class="preview-grid" id="prev-energia"></div>
+        </div>
+      </div>
+      <div class="medidor-card">
+        <div class="medidor-title">💧 Hidrômetro</div>
+        <div class="field"><label>Leitura (m³) <span class="req">*</span></label><input type="text" id="inp-agua" placeholder="Ex: 00089" inputmode="numeric"></div>
+        <div class="field" style="margin-bottom:0;"><label>Foto do hidrômetro <span class="req">*</span></label>
+          <label class="upload-label"><input type="file" accept="image/*" capture="environment" id="upload-agua" onchange="handleMedidor(this,'agua')"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--sky)" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><div><div class="upload-label-text">Tirar foto ou escolher</div><div class="upload-label-sub">Hidrômetro de água</div></div></label>
+          <div class="preview-grid" id="prev-agua"></div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="field"><label>Fotos gerais (até 10)</label>
+        <label class="upload-label"><input type="file" accept="image/*" multiple id="upload-geral" onchange="handleGeral(this)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--sky)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><div><div class="upload-label-text">Fotos gerais do imóvel</div><div class="upload-label-sub">Fachada, vista geral, etc.</div></div></label>
+        <div class="preview-grid" id="prev-geral"></div>
+      </div>
+      <div class="divider"></div>
+      <label class="check-wrap"><input type="checkbox" id="chk-declaracao"><span>Declaro que as informações e fotografias registradas refletem fielmente o estado do imóvel na data desta vistoria, sendo válidas para todos os fins contratuais e legais.</span></label>
+    </div>
+    <div class="nav-bar">
+      <button class="btn btn-secondary" onclick="voltar()">←</button>
+      <button class="btn btn-success" onclick="enviarVistoria()" id="btn-enviar">✅ Enviar Vistoria</button>
+    </div>
+  </div>
+
+</main>
+
+<footer class="footer"><button onclick="abrirAdmin()">⚙ Acesso Administrativo</button></footer>
+
+<div class="modal-overlay" id="adminOverlay" onclick="if(event.target===this)fecharAdmin()">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header"><h2>⚙ Painel Admin</h2><button class="modal-close" onclick="fecharAdmin()">✕</button></div>
+    <div class="modal-body">
+      <div id="adminLogin">
+        <div class="login-wrap">
+          <h3>🔐 Acesso restrito</h3><p>Digite a senha do proprietário.</p>
+          <div class="field"><label>Senha</label><input type="password" id="inp-senha-admin" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')loginAdmin()"></div>
+          <button class="btn btn-primary" onclick="loginAdmin()">Entrar</button>
+          <p id="login-erro" style="color:var(--ruim);font-size:13px;margin-top:10px;text-align:center;"></p>
+        </div>
+      </div>
+      <div id="adminPainel" style="display:none;">
+        <div class="admin-tabs">
+          <button class="admin-tab active" onclick="switchTab('imoveis',this)">🏠 Imóveis</button>
+          <button class="admin-tab" onclick="switchTab('novo',this)">➕ Novo</button>
+          <button class="admin-tab" onclick="switchTab('senha',this)">🔑 Senha</button>
+        </div>
+        <div id="tab-imoveis"><div id="lista-imoveis"><p style="color:var(--muted);font-size:14px;">Carregando...</p></div></div>
+        <div id="tab-novo" style="display:none;">
+          <input type="hidden" id="edit-id">
+          <div class="field"><label>Endereço <span class="req">*</span></label><input type="text" id="edit-endereco" placeholder="Rua, número, bairro, cidade-UF, CEP"></div>
+          <div class="field"><label>Locatário</label><input type="text" id="edit-locatario" placeholder="Nome do locatário"></div>
+          <div class="field"><label>Início da locação</label><input type="date" id="edit-inicio"></div>
+          <div class="field"><label>Status</label><select id="edit-status"><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></div>
+          <div class="divider"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;"><strong style="font-size:14px;color:var(--navy-mid);">Cômodos e itens</strong><button class="btn btn-primary btn-sm" onclick="adicionarComodo()">+ Cômodo</button></div>
+          <div id="lista-comodos-edit"></div>
+          <div style="display:flex;gap:10px;margin-top:16px;"><button class="btn btn-success" onclick="salvarImovelAdmin()">💾 Salvar</button><button class="btn btn-secondary btn-sm" onclick="limparFormImovel()">Limpar</button></div>
+        </div>
+        <div id="tab-senha" style="display:none;">
+          <div class="field"><label>Senha atual</label><input type="password" id="inp-senha-atual" placeholder="••••••••"></div>
+          <div class="field"><label>Nova senha</label><input type="password" id="inp-senha-nova" placeholder="Mínimo 8 caracteres"></div>
+          <button class="btn btn-primary" onclick="alterarSenhaAdmin()">Alterar senha</button>
+          <p id="senha-msg" style="font-size:13px;margin-top:10px;"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div><div class="loading-msg" id="loadingMsg">Aguarde...</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ⚠️ SUBSTITUA PELA URL DO SEU APPS SCRIPT (termina em /exec)
+var BACKEND_URL = 'https://script.google.com/macros/s/AKfycbxzPeooYSopwseqkz_NemuSjpVd7L5sKshvAZ9acjVj8aZzuxlNovhdx2113WMTy8aTWw/exec';
+
+var S = {
+  imoveis:[], imovelSel:null, secaoAtual:0, totalSecoes:1,
+  estadoGeral:'', senhaAdmin:'',
+  fotosComodo:{}, fotosMedidor:{energia:null,agua:null}, fotosGerais:[]
+};
+
+async function api(acao, body) {
+  var r = await fetch(BACKEND_URL, { method:'POST', body: JSON.stringify(Object.assign({acao:acao},body)) });
+  return r.json();
+}
+
+window.onload = function() {
+  document.getElementById('inp-data').value = new Date().toISOString().split('T')[0];
+  carregarImoveis();
+};
+
+async function carregarImoveis() {
+  try {
+    var sel = document.getElementById('sel-imovel');
+    var res = await api('getImoveisAtivos');
+    S.imoveis = res.data || [];
+    sel.innerHTML = '<option value="">Selecione o imóvel...</option>';
+    S.imoveis.forEach(function(im){ var o=document.createElement('option'); o.value=im.id; o.textContent=im.endereco; sel.appendChild(o); });
+  } catch(e) { document.getElementById('sel-imovel').innerHTML='<option value="">Erro — verifique a URL do backend</option>'; }
+}
+
+function secId(n) { if(n===0)return 'sec-0'; if(n===S.totalSecoes-1)return 'sec-final'; return 'sec-c'+(n-1); }
+
+function mostrarSecao(n) {
+  document.querySelectorAll('.section-card').forEach(function(el){el.classList.remove('active');});
+  document.getElementById(secId(n)).classList.add('active');
+  S.secaoAtual = n; atualizarProgress();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function atualizarProgress() {
+  var pct = S.totalSecoes>1 ? Math.round((S.secaoAtual/(S.totalSecoes-1))*100) : 0;
+  document.getElementById('progressFill').style.width = pct+'%';
+  var nomes = ['Identificação'].concat(S.imovelSel?S.imovelSel.comodos.map(function(c){return c.nome;}):[]).concat(['Conclusão']);
+  document.getElementById('progressLabel').textContent = nomes[S.secaoAtual]||'';
+  document.getElementById('progressCount').textContent = (S.secaoAtual+1)+' de '+S.totalSecoes;
+}
+
+function avancar() {
+  if(!validar())return;
+  if(S.secaoAtual===0){
+    var id=document.getElementById('sel-imovel').value;
+    var im=S.imoveis.find(function(i){return i.id===id;});
+    if(!im){toast('Selecione um imóvel.','error');return;}
+    S.imovelSel=im; gerarComodos(im);
+    S.totalSecoes=im.comodos.length+2; atualizarProgress();
+  }
+  if(S.secaoAtual<S.totalSecoes-1) mostrarSecao(S.secaoAtual+1);
+}
+function voltar(){if(S.secaoAtual>0)mostrarSecao(S.secaoAtual-1);}
+
+function validar(){
+  if(S.secaoAtual===0){
+    if(!document.getElementById('sel-imovel').value){toast('Selecione o imóvel.','error');return false;}
+    if(!document.getElementById('inp-vistoriador').value.trim()){toast('Informe o vistoriador.','error');return false;}
+    if(!document.getElementById('inp-data').value){toast('Informe a data.','error');return false;}
+  }
+  return true;
+}
+
+var ICONES = {
+  garage:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>',
+  outdoor:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
+  kitchen:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>',
+  living:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+  bedroom:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/></svg>',
+  bathroom:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20"/><path d="M20 20v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8"/><path d="M12 12v8"/></svg>',
+  electrical:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'
+};
+
+function slugify(s){return s.replace(/[^a-zA-Z0-9]/g,'_').substring(0,60);}
+
+function gerarComodos(imovel) {
+  var container = document.getElementById('secoesComodos'); container.innerHTML='';
+  imovel.comodos.forEach(function(comodo,ci){
+    var sec=document.createElement('div'); sec.className='section-card'; sec.id='sec-c'+ci;
+    var itensHtml=comodo.itens.map(function(item){
+      var chave=slugify(comodo.nome+'__'+item);
+      return '<div class="item-block">'
+        +'<div class="item-header"><span style="color:var(--sky);font-size:10px;">●</span><span class="item-name">'+item+'</span></div>'
+        +'<div class="item-body">'
+        +'<div class="estado-label">Estado de conservação</div>'
+        +'<div class="estado-group">'
+        +[['Ótimo','otimo'],['Bom','bom'],['Regular','reg'],['Ruim','ruim'],['N/A','na']].map(function(e){
+          return '<button class="estado-btn" data-chave="'+chave+'" data-estado="'+e[0]+'" onclick="selEstado(this)"><span class="dot"></span>'+e[0]+'</button>';
+        }).join('')
+        +'</div>'
+        +'<textarea class="obs-input" id="obs-'+chave+'" placeholder="Observações (opcional)..."></textarea>'
+        +'<div style="margin-top:10px;">'
+        +'<label class="upload-label"><input type="file" accept="image/*" multiple style="display:none;" onchange="handleItem(this,\''+comodo.nome.replace(/'/g,"\\'")+'}\',\''+item.replace(/'/g,"\\'")+'\',\''+chave+'\')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sky)" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><div><div class="upload-label-text">Adicionar fotos</div><div class="upload-label-sub">Até 5 por item</div></div></label>'
+        +'<div class="preview-grid" id="prev-'+chave+'"></div>'
+        +'</div></div></div>';
+    }).join('');
+    sec.innerHTML='<div class="section-header">'+(ICONES[comodo.icone]||ICONES.outdoor)+'<div><h2>'+comodo.nome+'</h2><p>'+comodo.itens.length+' itens</p></div></div>'
+      +'<div class="section-body">'+itensHtml+'</div>'
+      +'<div class="nav-bar"><button class="btn btn-secondary" onclick="voltar()">←</button><button class="btn btn-primary" onclick="avancar()">Próximo →</button></div>';
+    container.appendChild(sec);
+  });
+}
+
+function selEstado(btn){
+  var chave=btn.dataset.chave;
+  document.querySelectorAll('[data-chave="'+chave+'"]').forEach(function(b){b.className='estado-btn';});
+  var m={'Ótimo':'sel-otimo','Bom':'sel-bom','Regular':'sel-reg','Ruim':'sel-ruim','N/A':'sel-na'};
+  btn.classList.add(m[btn.dataset.estado]||'sel-na');
+}
+function selEG(btn,val){
+  document.querySelectorAll('.eg-btn').forEach(function(b){b.classList.remove('sel');});
+  btn.classList.add('sel'); S.estadoGeral=val;
+}
+
+function lerB64(file){return new Promise(function(res){var r=new FileReader();r.onload=function(e){res(e.target.result);};r.readAsDataURL(file);});}
+
+function handleItem(input,comodo,item,chave){
+  var files=Array.from(input.files).slice(0,5);
+  if(!S.fotosComodo[chave])S.fotosComodo[chave]=[];
+  var prev=document.getElementById('prev-'+chave);
+  files.forEach(function(f){
+    if(S.fotosComodo[chave].length>=5)return;
+    lerB64(f).then(function(b64){S.fotosComodo[chave].push({base64:b64,comodo:comodo,item:item});renderPrev(prev,S.fotosComodo[chave],chave);});
+  });
+  input.value='';
+}
+function handleMedidor(input,tipo){
+  var f=input.files[0];if(!f)return;
+  lerB64(f).then(function(b64){
+    S.fotosMedidor[tipo]={base64:b64,comodo:'Medidores',item:tipo};
+    var prev=document.getElementById('prev-'+tipo);prev.innerHTML='';
+    prev.appendChild(thumb(b64,function(){S.fotosMedidor[tipo]=null;prev.innerHTML='';}));
+  });input.value='';
+}
+function handleGeral(input){
+  var files=Array.from(input.files).slice(0,10-S.fotosGerais.length);
+  var prev=document.getElementById('prev-geral');
+  files.forEach(function(f){
+    if(S.fotosGerais.length>=10)return;
+    lerB64(f).then(function(b64){
+      var idx=S.fotosGerais.push({base64:b64,comodo:'Geral',item:'Foto'})-1;
+      prev.appendChild(thumb(b64,function(){S.fotosGerais.splice(idx,1);renderPrevGeral(prev);}));
+    });
+  });input.value='';
+}
+function renderPrev(c,arr,chave){c.innerHTML='';arr.forEach(function(f,i){c.appendChild(thumb(f.base64,function(){arr.splice(i,1);renderPrev(c,arr,chave);}));});}
+function renderPrevGeral(c){c.innerHTML='';S.fotosGerais.forEach(function(f,i){c.appendChild(thumb(f.base64,function(){S.fotosGerais.splice(i,1);renderPrevGeral(c);}));});}
+function thumb(src,onRemove){
+  var d=document.createElement('div');d.className='preview-thumb';
+  var img=document.createElement('img');img.src=src;
+  var btn=document.createElement('button');btn.className='remove-btn';btn.textContent='✕';
+  btn.onclick=function(e){e.stopPropagation();e.preventDefault();onRemove();d.remove();};
+  d.appendChild(img);d.appendChild(btn);return d;
+}
+
+function coletarDados(){
+  var comodos=S.imovelSel.comodos.map(function(comodo){
+    var itens=comodo.itens.map(function(item){
+      var chave=slugify(comodo.nome+'__'+item);
+      var sel=document.querySelector('[data-chave="'+chave+'"].sel-otimo,[data-chave="'+chave+'"].sel-bom,[data-chave="'+chave+'"].sel-reg,[data-chave="'+chave+'"].sel-ruim,[data-chave="'+chave+'"].sel-na');
+      return{nome:item,estado:sel?sel.dataset.estado:'',observacao:(document.getElementById('obs-'+chave)||{}).value||''};
+    });
+    return{nome:comodo.nome,itens:itens};
+  });
+  var fotos=[];
+  Object.values(S.fotosComodo).forEach(function(arr){arr.forEach(function(f){fotos.push(f);});});
+  if(S.fotosMedidor.energia)fotos.push(S.fotosMedidor.energia);
+  if(S.fotosMedidor.agua)fotos.push(S.fotosMedidor.agua);
+  S.fotosGerais.forEach(function(f){fotos.push(f);});
+  return{
+    imovelId:S.imovelSel.id,
+    vistoriador:document.getElementById('inp-vistoriador').value.trim(),
+    data:document.getElementById('inp-data').value,
+    tipoVistoria:document.getElementById('sel-tipo').value,
+    obsIniciais:document.getElementById('inp-obs-ini').value.trim(),
+    estadoGeral:S.estadoGeral,
+    condicoesUso:document.getElementById('sel-condicoes').value,
+    pendencias:document.getElementById('inp-pendencias').value.trim(),
+    medidorEnergia:document.getElementById('inp-energia').value.trim(),
+    hidrometro:document.getElementById('inp-agua').value.trim(),
+    comodos:comodos,fotos:fotos
+  };
+}
+
+async function enviarVistoria(){
+  if(!S.estadoGeral){toast('Selecione o estado geral.','error');return;}
+  if(!document.getElementById('sel-condicoes').value){toast('Informe as condições de uso.','error');return;}
+  if(!document.getElementById('inp-energia').value.trim()){toast('Informe a leitura de energia.','error');return;}
+  if(!S.fotosMedidor.energia){toast('Adicione a foto do medidor de energia.','error');return;}
+  if(!document.getElementById('inp-agua').value.trim()){toast('Informe a leitura do hidrômetro.','error');return;}
+  if(!S.fotosMedidor.agua){toast('Adicione a foto do hidrômetro.','error');return;}
+  if(!document.getElementById('chk-declaracao').checked){toast('Confirme a declaração de veracidade.','error');return;}
+  loading(true,'Salvando fotos e gerando PDF...');
+  document.getElementById('btn-enviar').disabled=true;
+  try{
+    var res=await api('processarVistoria',{dados:coletarDados()});
+    loading(false);
+    if(res.sucesso){
+      var link=document.getElementById('successLink');
+      if(res.urlPasta){link.href=res.urlPasta;link.style.display='block';}
+      document.querySelectorAll('.section-card').forEach(function(el){el.style.display='none';});
+      document.getElementById('progressWrap').style.display='none';
+      document.getElementById('successScreen').classList.add('show');
+    }else{toast('Erro: '+(res.erro||'Tente novamente.'),'error');document.getElementById('btn-enviar').disabled=false;}
+  }catch(e){loading(false);toast('Erro de conexão.','error');document.getElementById('btn-enviar').disabled=false;}
+}
+
+function abrirAdmin(){document.getElementById('adminOverlay').classList.add('open');document.getElementById('adminLogin').style.display='block';document.getElementById('adminPainel').style.display='none';document.getElementById('inp-senha-admin').value='';document.getElementById('login-erro').textContent='';}
+function fecharAdmin(){document.getElementById('adminOverlay').classList.remove('open');S.senhaAdmin='';}
+async function loginAdmin(){
+  var senha=document.getElementById('inp-senha-admin').value;
+  try{
+    var res=await api('verificarSenha',{senha:senha});
+    if(res.ok){S.senhaAdmin=senha;document.getElementById('adminLogin').style.display='none';document.getElementById('adminPainel').style.display='block';carregarImoveisAdmin();}
+    else document.getElementById('login-erro').textContent='Senha incorreta.';
+  }catch(e){document.getElementById('login-erro').textContent='Erro de conexão.';}
+}
+
+function switchTab(nome,btn,semLimpar){
+  document.querySelectorAll('.admin-tab').forEach(function(b){b.classList.remove('active');});btn.classList.add('active');
+  ['imoveis','novo','senha'].forEach(function(t){document.getElementById('tab-'+t).style.display=t===nome?'block':'none';});
+  if(nome==='imoveis')carregarImoveisAdmin();
+  if(nome==='novo'&&!semLimpar)limparFormImovel();
+}
+
+async function carregarImoveisAdmin(){
+  try{
+    var res=await api('getImoveis');var lista=res.data||[];
+    var c=document.getElementById('lista-imoveis');
+    if(!lista.length){c.innerHTML='<p style="color:var(--muted);font-size:14px;">Nenhum imóvel cadastrado.</p>';return;}
+    c.innerHTML='';
+    lista.forEach(function(im){
+      var div=document.createElement('div');div.className='imovel-card';
+      div.innerHTML='<span class="badge badge-'+im.status+'">'+im.status+'</span><h3 style="margin-top:6px;">'+im.endereco+'</h3><p>Locatário: '+(im.locatario||'—')+' · '+(im.comodos?im.comodos.length:0)+' cômodos</p>';
+      var actions=document.createElement('div');actions.className='imovel-card-actions';
+      var btnE=document.createElement('button');btnE.className='btn btn-secondary btn-sm';btnE.textContent='✏️ Editar';btnE.onclick=function(){editarImovel(im.id);};actions.appendChild(btnE);
+      if(im.status==='ativo'){var btnD=document.createElement('button');btnD.className='btn btn-danger btn-sm';btnD.textContent='Desativar';btnD.onclick=function(){desativarImovelAdmin(im.id);};actions.appendChild(btnD);}
+      div.appendChild(actions);c.appendChild(div);
+    });
+  }catch(e){document.getElementById('lista-imoveis').innerHTML='<p style="color:var(--ruim);">Erro ao carregar.</p>';}
+}
+
+async function editarImovel(id){
+  var res=await api('getImoveis');var im=(res.data||[]).find(function(i){return i.id===id;});if(!im)return;
+  document.getElementById('edit-id').value=im.id;
+  document.getElementById('edit-endereco').value=im.endereco||'';
+  document.getElementById('edit-locatario').value=im.locatario||'';
+  document.getElementById('edit-inicio').value=im.inicioLocacao||'';
+  document.getElementById('edit-status').value=im.status||'ativo';
+  renderComodosList(im.comodos||[]);
+  switchTab('novo',document.querySelectorAll('.admin-tab')[1],true);
+}
+
+var comodosEdit=[];
+function limparFormImovel(){document.getElementById('edit-id').value='';document.getElementById('edit-endereco').value='';document.getElementById('edit-locatario').value='';document.getElementById('edit-inicio').value='';document.getElementById('edit-status').value='ativo';comodosEdit=[];renderComodosList([]);}
+
+function renderComodosList(comodos){
+  comodosEdit=JSON.parse(JSON.stringify(comodos));
+  var c=document.getElementById('lista-comodos-edit');c.innerHTML='';
+  comodosEdit.forEach(function(cm,ci){c.appendChild(criarComodoEdit(cm,ci));});
+}
+
+function criarComodoEdit(comodo,ci){
+  var div=document.createElement('div');div.className='comodo-edit';div.setAttribute('data-ci',ci);
+  var hdr=document.createElement('div');hdr.className='comodo-edit-header';
+  var inp=document.createElement('input');inp.type='text';inp.value=comodo.nome||'';inp.placeholder='Nome do cômodo';inp.style.flex='1';
+  inp.addEventListener('input',(function(i){return function(){comodosEdit[i].nome=this.value;};})(ci));
+  var sel=document.createElement('select');sel.style.width='110px';
+  ['garage','outdoor','kitchen','living','bedroom','bathroom','electrical'].forEach(function(ic){var o=document.createElement('option');o.value=ic;o.textContent=ic;if(comodo.icone===ic)o.selected=true;sel.appendChild(o);});
+  sel.addEventListener('change',(function(i){return function(){comodosEdit[i].icone=this.value;};})(ci));
+  var btnR=document.createElement('button');btnR.className='btn btn-danger btn-sm';btnR.textContent='✕';
+  btnR.addEventListener('click',(function(i){return function(){removerComodo(i);};})(ci));
+  hdr.appendChild(inp);hdr.appendChild(sel);hdr.appendChild(btnR);div.appendChild(hdr);
+  var tagsDiv=document.createElement('div');tagsDiv.id='itens-ci-'+ci;tagsDiv.style.cssText='margin-bottom:8px;min-height:24px;';
+  (comodo.itens||[]).forEach(function(it,ii){tagsDiv.appendChild(criarItemTag(ci,ii,it));});div.appendChild(tagsDiv);
+  var row=document.createElement('div');row.style.cssText='display:flex;gap:8px;margin-top:8px;';
+  var inpI=document.createElement('input');inpI.type='text';inpI.id='inp-add-item-'+ci;inpI.placeholder='Novo item...';inpI.style.flex='1';
+  inpI.addEventListener('keydown',(function(i){return function(e){if(e.key==='Enter'){e.preventDefault();adicionarItem(i);}};})(ci));
+  var btnA=document.createElement('button');btnA.className='btn btn-primary btn-sm';btnA.textContent='+ Item';
+  btnA.addEventListener('click',(function(i){return function(){adicionarItem(i);};})(ci));
+  row.appendChild(inpI);row.appendChild(btnA);div.appendChild(row);
+  return div;
+}
+
+function criarItemTag(ci,ii,texto){
+  var span=document.createElement('span');span.className='item-tag';span.textContent=texto+' ';
+  var btn=document.createElement('button');btn.textContent='✕';
+  btn.addEventListener('click',(function(c,i){return function(){removerItem(c,i);};})(ci,ii));
+  span.appendChild(btn);return span;
+}
+
+function adicionarComodo(){comodosEdit.push({nome:'',icone:'outdoor',itens:[]});renderComodosList(comodosEdit);}
+function removerComodo(ci){comodosEdit.splice(ci,1);renderComodosList(comodosEdit);}
+function adicionarItem(ci){
+  var inp=document.getElementById('inp-add-item-'+ci);var val=inp.value.trim();if(!val)return;
+  var ii=comodosEdit[ci].itens.push(val)-1;inp.value='';
+  document.getElementById('itens-ci-'+ci).appendChild(criarItemTag(ci,ii,val));
+}
+function removerItem(ci,ii){comodosEdit[ci].itens.splice(ii,1);renderComodosList(comodosEdit);}
+
+async function salvarImovelAdmin(){
+  var end=document.getElementById('edit-endereco').value.trim();
+  if(!end){toast('Informe o endereço.','error');return;}
+  loading(true,'Salvando imóvel...');
+  try{
+    var res=await api('salvarImovel',{dados:{id:document.getElementById('edit-id').value||null,endereco:end,locatario:document.getElementById('edit-locatario').value.trim(),inicioLocacao:document.getElementById('edit-inicio').value,status:document.getElementById('edit-status').value,comodos:comodosEdit},senha:S.senhaAdmin});
+    loading(false);
+    if(res.sucesso){toast('Imóvel salvo!','success');carregarImoveis();limparFormImovel();switchTab('imoveis',document.querySelectorAll('.admin-tab')[0]);}
+    else toast('Erro: '+res.erro,'error');
+  }catch(e){loading(false);toast('Erro de conexão.','error');}
+}
+
+async function desativarImovelAdmin(id){
+  if(!confirm('Desativar este imóvel?'))return;
+  var res=await api('desativarImovel',{id:id,senha:S.senhaAdmin});
+  if(res.sucesso){toast('Imóvel desativado.');carregarImoveisAdmin();carregarImoveis();}
+  else toast('Erro: '+res.erro,'error');
+}
+
+async function alterarSenhaAdmin(){
+  var res=await api('alterarSenha',{senhaAtual:document.getElementById('inp-senha-atual').value,novaSenha:document.getElementById('inp-senha-nova').value});
+  var msg=document.getElementById('senha-msg');
+  if(res.sucesso){S.senhaAdmin=document.getElementById('inp-senha-nova').value;msg.style.color='var(--ok)';msg.textContent='Senha alterada!';}
+  else{msg.style.color='var(--ruim)';msg.textContent=res.erro;}
+}
+
+function toast(msg,tipo){var t=document.getElementById('toast');t.textContent=msg;t.className='toast '+(tipo||'')+' show';setTimeout(function(){t.classList.remove('show');},3500);}
+function loading(show,msg){document.getElementById('loadingOverlay').classList.toggle('open',show);if(msg)document.getElementById('loadingMsg').textContent=msg;}
+</script>
+</body>
+</html>
