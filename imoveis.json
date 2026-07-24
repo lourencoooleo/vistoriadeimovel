@@ -1,0 +1,30 @@
+{
+  "senhaAdmin": "Lourenco@2025",
+  "imoveis": [
+    {
+      "id": "imovel_001",
+      "endereco": "Rua Ademir Ferraz Carbonel, 191, Park Daville, Peruíbe-SP, 11771-482",
+      "locatario": "Edna Regina Espinosa",
+      "inicioLocacao": "2025-09-13",
+      "status": "ativo",
+      "comodos": [
+        { "nome": "Quintal e Garagem", "icone": "garage",
+          "itens": ["Piso/pavimentação","Muro perimetral","Portão de ferro manual (dobradiças, trinco, fechadura)","Iluminação externa","Ralos e escoamento"] },
+        { "nome": "Área Externa Coberta", "icone": "outdoor",
+          "itens": ["Piso","Teto/cobertura","Paredes","Tanque (estado, torneira, sifão)","Ponto de máquina de lavar (tomada, encanamento)","Iluminação","Ralos e escoamento"] },
+        { "nome": "Cozinha", "icone": "kitchen",
+          "itens": ["Piso","Paredes e azulejos","Teto","Porta e fechadura","Janela(s) e vidros","Pia e torneira","Pontos elétricos","Iluminação","Ralos"] },
+        { "nome": "Sala", "icone": "living",
+          "itens": ["Piso","Paredes e pintura","Teto","Porta e fechadura","Janela(s) e vidros","Pontos elétricos","Iluminação"] },
+        { "nome": "Quarto 1", "icone": "bedroom",
+          "itens": ["Piso","Paredes e pintura","Teto","Porta e fechadura","Janela(s) e vidros","Pontos elétricos","Iluminação"] },
+        { "nome": "Quarto 2", "icone": "bedroom",
+          "itens": ["Piso","Paredes e pintura","Teto","Porta e fechadura","Janela(s) e vidros","Pontos elétricos","Iluminação"] },
+        { "nome": "Banheiro", "icone": "bathroom",
+          "itens": ["Piso","Paredes e azulejos","Teto","Porta e fechadura","Vaso sanitário e descarga","Pia e torneira","Box e chuveiro","Pontos elétricos e iluminação","Ralos","Ventilação"] },
+        { "nome": "Instalações Gerais", "icone": "electrical",
+          "itens": ["Quadro de energia elétrica","Caixa d'água","Chaves entregues (número e descrição)"] }
+      ]
+    }
+  ]
+}
