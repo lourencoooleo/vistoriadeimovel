@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0f2744">
 <title>Sistema de Vistorias</title>
@@ -191,8 +192,8 @@ select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
   <div class="success-screen" id="successScreen">
     <div class="success-icon">checkmark</div>
     <h2>Vistoria registrada!</h2>
-    <p id="successMsg">PDF enviado por e-mail e fotos salvas no Google Drive.</p>
-    <a id="successLink" href="#" target="_blank" style="display:none;text-decoration:none;"><button class="btn btn-primary" style="margin:0 auto 16px;max-width:280px;">Abrir pasta no Drive</button></a>
+    <p id="successMsg">O download do arquivo ZIP começou automaticamente. Ele contém o PDF da vistoria e todas as fotos organizadas.</p>
+    <button class="btn btn-primary" id="btn-baixar-pdf" style="display:none;margin:0 auto 12px;max-width:280px;">📄 Baixar apenas o PDF</button>
     <br><button class="btn btn-secondary" style="max-width:200px;margin:0 auto;" onclick="location.reload()">Nova Vistoria</button>
   </div>
 
@@ -310,93 +311,152 @@ select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
 <div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div><div class="loading-msg" id="loadingMsg">Aguarde...</div></div>
 <div class="toast" id="toast"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
-// ⚠️ SUBSTITUA PELA URL DO SEU APPS SCRIPT (termina em /exec)
-var BACKEND_URL = 'https://script.google.com/macros/s/AKfycbxMAGLyIIvXGT3c0uc9_DJLoSoJ5cZFx90WXbe61N54z_Xeq7KiXqd3bvYjdCSVmaUW8Q/exec';
+// ══════════════════════════════════════════════════════════
+//  SISTEMA DE VISTORIAS — 100% Client-Side
+//  Fonte dos imóveis: imoveis.json no mesmo repositório GitHub
+//  Saída: PDF + ZIP com todas as fotos baixados no dispositivo
+// ══════════════════════════════════════════════════════════
+
+var IMOVEIS_URL = 'imoveis.json'; // relativo — funciona no GitHub Pages
+var SENHA_ADMIN = 'Lourenco@2025'; // sobrescrita pelo JSON se existir
+var STORAGE_KEY = 'vistoria_imoveis_local';
 
 var S = {
-  imoveis:[], imovelSel:null, secaoAtual:0, totalSecoes:1,
-  estadoGeral:'', senhaAdmin:'',
-  fotosComodo:{}, fotosMedidor:{energia:null,agua:null}, fotosGerais:[]
+  imoveis: [],
+  imovelSel: null,
+  secaoAtual: 0,
+  totalSecoes: 1,
+  estadoGeral: '',
+  senhaAdmin: '',
+  fotosComodo: {},
+  fotosMedidor: { energia: null, agua: null },
+  fotosGerais: []
 };
 
-// fetch POST direto — sem JSONP, sem CORS workaround
-// O Apps Script com "Executar como: Eu / Acesso: Qualquer pessoa"
-// aceita POST de qualquer origem quando configurado corretamente.
-async function api(acao, body) {
-  var res = await fetch(BACKEND_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify(Object.assign({ acao: acao }, body))
-  });
-  return res.json();
-}
-
+// ══════════════════════════════════════════════════════════
+//  CARREGAMENTO DOS IMÓVEIS
+// ══════════════════════════════════════════════════════════
 window.onload = function() {
   document.getElementById('inp-data').value = new Date().toISOString().split('T')[0];
   carregarImoveis();
 };
 
 async function carregarImoveis() {
+  var sel = document.getElementById('sel-imovel');
+  sel.innerHTML = '<option value="">Carregando...</option>';
+
+  // 1. Tenta carregar do localStorage (edições locais)
+  var localData = localStorage.getItem(STORAGE_KEY);
+  if (localData) {
+    try {
+      var parsed = JSON.parse(localData);
+      S.imoveis = parsed.imoveis || [];
+      if (parsed.senhaAdmin) SENHA_ADMIN = parsed.senhaAdmin;
+      preencherDropdown();
+      return;
+    } catch(e) {}
+  }
+
+  // 2. Se não tem local, carrega do JSON remoto
   try {
-    var sel = document.getElementById('sel-imovel');
-    var res = await api('getImoveisAtivos');
-    S.imoveis = res.data || [];
-    sel.innerHTML = '<option value="">Selecione o imóvel...</option>';
-    S.imoveis.forEach(function(im){ var o=document.createElement('option'); o.value=im.id; o.textContent=im.endereco; sel.appendChild(o); });
-  } catch(e) { document.getElementById('sel-imovel').innerHTML='<option value="">Erro — verifique a URL do backend</option>'; }
+    var res = await fetch(IMOVEIS_URL + '?t=' + Date.now());
+    var data = await res.json();
+    S.imoveis = data.imoveis || [];
+    if (data.senhaAdmin) SENHA_ADMIN = data.senhaAdmin;
+    // Salva localmente para próximas visitas
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    preencherDropdown();
+  } catch(e) {
+    sel.innerHTML = '<option value="">Erro ao carregar imóveis</option>';
+    toast('Erro ao carregar imoveis.json', 'error');
+  }
 }
 
-function secId(n) { if(n===0)return 'sec-0'; if(n===S.totalSecoes-1)return 'sec-final'; return 'sec-c'+(n-1); }
+function preencherDropdown() {
+  var sel = document.getElementById('sel-imovel');
+  var ativos = S.imoveis.filter(function(i) { return i.status === 'ativo'; });
+  if (ativos.length === 0) {
+    sel.innerHTML = '<option value="">Nenhum imóvel cadastrado</option>';
+    return;
+  }
+  sel.innerHTML = '<option value="">Selecione o imóvel...</option>';
+  ativos.forEach(function(im) {
+    var o = document.createElement('option');
+    o.value = im.id;
+    o.textContent = im.endereco;
+    sel.appendChild(o);
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+//  NAVEGAÇÃO ENTRE SEÇÕES
+// ══════════════════════════════════════════════════════════
+function secId(n) {
+  if (n === 0) return 'sec-0';
+  if (n === S.totalSecoes - 1) return 'sec-final';
+  return 'sec-c' + (n - 1);
+}
 
 function mostrarSecao(n) {
-  document.querySelectorAll('.section-card').forEach(function(el){el.classList.remove('active');});
+  document.querySelectorAll('.section-card').forEach(function(el) { el.classList.remove('active'); });
   document.getElementById(secId(n)).classList.add('active');
-  S.secaoAtual = n; atualizarProgress();
-  window.scrollTo({top:0,behavior:'smooth'});
+  S.secaoAtual = n;
+  atualizarProgress();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function atualizarProgress() {
-  var pct = S.totalSecoes>1 ? Math.round((S.secaoAtual/(S.totalSecoes-1))*100) : 0;
-  document.getElementById('progressFill').style.width = pct+'%';
-  var nomes = ['Identificação'].concat(S.imovelSel?S.imovelSel.comodos.map(function(c){return c.nome;}):[]).concat(['Conclusão']);
-  document.getElementById('progressLabel').textContent = nomes[S.secaoAtual]||'';
-  document.getElementById('progressCount').textContent = (S.secaoAtual+1)+' de '+S.totalSecoes;
+  var pct = S.totalSecoes > 1 ? Math.round((S.secaoAtual / (S.totalSecoes - 1)) * 100) : 0;
+  document.getElementById('progressFill').style.width = pct + '%';
+  var nomes = ['Identificação']
+    .concat(S.imovelSel ? S.imovelSel.comodos.map(function(c){return c.nome;}) : [])
+    .concat(['Conclusão']);
+  document.getElementById('progressLabel').textContent = nomes[S.secaoAtual] || '';
+  document.getElementById('progressCount').textContent = (S.secaoAtual + 1) + ' de ' + S.totalSecoes;
 }
 
 function avancar() {
-  if(!validar())return;
-  if(S.secaoAtual===0){
-    var id=document.getElementById('sel-imovel').value;
-    var im=S.imoveis.find(function(i){return i.id===id;});
-    if(!im){toast('Selecione um imóvel.','error');return;}
-    S.imovelSel=im; gerarComodos(im);
-    S.totalSecoes=im.comodos.length+2; atualizarProgress();
+  if (!validar()) return;
+  if (S.secaoAtual === 0) {
+    var id = document.getElementById('sel-imovel').value;
+    var im = S.imoveis.find(function(i){ return i.id === id; });
+    if (!im) { toast('Selecione um imóvel.','error'); return; }
+    S.imovelSel = im;
+    gerarComodos(im);
+    S.totalSecoes = im.comodos.length + 2;
+    atualizarProgress();
   }
-  if(S.secaoAtual<S.totalSecoes-1) mostrarSecao(S.secaoAtual+1);
+  if (S.secaoAtual < S.totalSecoes - 1) mostrarSecao(S.secaoAtual + 1);
 }
-function voltar(){if(S.secaoAtual>0)mostrarSecao(S.secaoAtual-1);}
+function voltar() { if (S.secaoAtual > 0) mostrarSecao(S.secaoAtual - 1); }
 
-function validar(){
-  if(S.secaoAtual===0){
-    if(!document.getElementById('sel-imovel').value){toast('Selecione o imóvel.','error');return false;}
-    if(!document.getElementById('inp-vistoriador').value.trim()){toast('Informe o vistoriador.','error');return false;}
-    if(!document.getElementById('inp-data').value){toast('Informe a data.','error');return false;}
+function validar() {
+  if (S.secaoAtual === 0) {
+    if (!document.getElementById('sel-imovel').value) { toast('Selecione o imóvel.','error'); return false; }
+    if (!document.getElementById('inp-vistoriador').value.trim()) { toast('Informe o vistoriador.','error'); return false; }
+    if (!document.getElementById('inp-data').value) { toast('Informe a data.','error'); return false; }
   }
   return true;
 }
 
+// ══════════════════════════════════════════════════════════
+//  GERAR SEÇÕES DE CÔMODOS
+// ══════════════════════════════════════════════════════════
 var ICONES = {
   garage:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>',
   outdoor:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
-  kitchen:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>',
+  kitchen:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/></svg>',
   living:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
   bedroom:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/></svg>',
   bathroom:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20"/><path d="M20 20v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8"/><path d="M12 12v8"/></svg>',
   electrical:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'
 };
 
-function slugify(s){return s.replace(/[^a-zA-Z0-9]/g,'_').substring(0,60);}
+function slugify(s) { return s.replace(/[^a-zA-Z0-9]/g,'_').substring(0,60); }
 
 function gerarComodos(imovel) {
   var container = document.getElementById('secoesComodos');
@@ -406,35 +466,58 @@ function gerarComodos(imovel) {
     sec.className = 'section-card';
     sec.id = 'sec-c' + ci;
 
-    // Header
     var hdr = document.createElement('div');
     hdr.className = 'section-header';
     hdr.innerHTML = (ICONES[comodo.icone] || ICONES.outdoor)
       + '<div><h2>' + comodo.nome + '</h2><p>' + comodo.itens.length + ' itens</p></div>';
     sec.appendChild(hdr);
 
-    // Body
     var body = document.createElement('div');
     body.className = 'section-body';
 
     comodo.itens.forEach(function(item) {
       var chave = slugify(comodo.nome + '__' + item);
-
       var bloco = document.createElement('div');
       bloco.className = 'item-block';
 
-      // Item header
       var iHdr = document.createElement('div');
       iHdr.className = 'item-header';
       iHdr.innerHTML = '<span style="color:var(--sky);font-size:10px;">●</span><span class="item-name">' + item + '</span>';
       bloco.appendChild(iHdr);
 
-      // Item body
       var iBody = document.createElement('div');
       iBody.className = 'item-body';
 
-      // Label estado — oculto para item de chaves
-      if (item.indexOf('Chaves entregues') !== 0) {
+      // Chaves entregues — bloco especial
+      if (item.indexOf('Chaves entregues') === 0) {
+        var chavesWrap = document.createElement('div');
+        chavesWrap.style.cssText = 'background:var(--sky-lite);border:1.5px solid #c3dff4;border-radius:10px;padding:14px;';
+
+        var lbl = document.createElement('label');
+        lbl.className = 'check-wrap';
+        lbl.style.cssText = 'margin-bottom:12px;background:none;border:none;padding:0;';
+        var chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.id = 'chk-' + chave;
+        var sp = document.createElement('span');
+        sp.textContent = 'Declaro que as chaves do imóvel foram entregues ao vistoriador nesta data.';
+        lbl.appendChild(chk); lbl.appendChild(sp);
+        chavesWrap.appendChild(lbl);
+
+        var descLbl = document.createElement('label');
+        descLbl.style.cssText = 'font-size:13px;font-weight:600;color:var(--navy-mid);display:block;margin-bottom:6px;';
+        descLbl.textContent = 'Descrição das chaves entregues';
+        chavesWrap.appendChild(descLbl);
+
+        var desc = document.createElement('textarea');
+        desc.className = 'obs-input';
+        desc.id = 'obs-' + chave;
+        desc.placeholder = 'Ex: 2 chaves da porta principal, 1 chave do portão...';
+        desc.style.minHeight = '70px';
+        chavesWrap.appendChild(desc);
+        iBody.appendChild(chavesWrap);
+      } else {
+        // Item padrão
         var elabel = document.createElement('div');
         elabel.className = 'estado-label';
         elabel.textContent = 'Estado de conservação';
@@ -452,364 +535,552 @@ function gerarComodos(imovel) {
           eGroup.appendChild(btn);
         });
         iBody.appendChild(eGroup);
-      }
 
-      // Item especial: Chaves entregues — vira declaração
-      if (item.indexOf('Chaves entregues') === 0) {
-        var chavesWrap = document.createElement('div');
-        chavesWrap.style.cssText = 'background:var(--sky-lite);border:1.5px solid #c3dff4;border-radius:10px;padding:14px;margin-bottom:10px;';
-
-        var chavesLabel = document.createElement('label');
-        chavesLabel.className = 'check-wrap';
-        chavesLabel.style.cssText = 'margin-bottom:12px;background:none;border:none;padding:0;';
-
-        var chavesCheck = document.createElement('input');
-        chavesCheck.type = 'checkbox';
-        chavesCheck.id = 'chk-' + chave;
-
-        var chavesText = document.createElement('span');
-        chavesText.textContent = 'Declaro que as chaves do imóvel foram entregues ao vistoriador nesta data.';
-
-        chavesLabel.appendChild(chavesCheck);
-        chavesLabel.appendChild(chavesText);
-        chavesWrap.appendChild(chavesLabel);
-
-        var chavesDescLabel = document.createElement('label');
-        chavesDescLabel.style.cssText = 'font-size:13px;font-weight:600;color:var(--navy-mid);display:block;margin-bottom:6px;';
-        chavesDescLabel.textContent = 'Descrição das chaves entregues';
-        chavesWrap.appendChild(chavesDescLabel);
-
-        var chavesDesc = document.createElement('textarea');
-        chavesDesc.className = 'obs-input';
-        chavesDesc.id = 'obs-' + chave;
-        chavesDesc.placeholder = 'Ex: 2 chaves da porta principal, 1 chave do portão, 1 controle remoto...';
-        chavesDesc.style.minHeight = '70px';
-        chavesWrap.appendChild(chavesDesc);
-
-        iBody.appendChild(chavesWrap);
-      } else {
-        // Textarea observação padrão
         var obs = document.createElement('textarea');
         obs.className = 'obs-input';
         obs.id = 'obs-' + chave;
         obs.placeholder = 'Observações (opcional)...';
         iBody.appendChild(obs);
+
+        var upWrap = document.createElement('div');
+        upWrap.style.marginTop = '10px';
+        var upLabel = document.createElement('label');
+        upLabel.className = 'upload-label';
+        var upInput = document.createElement('input');
+        upInput.type = 'file';
+        upInput.accept = 'image/*';
+        upInput.multiple = true;
+        upInput.style.display = 'none';
+        (function(c, it, ch) {
+          upInput.addEventListener('change', function() { handleItem(this, c, it, ch); });
+        })(comodo.nome, item, chave);
+        upLabel.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sky)" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><div><div class="upload-label-text">Adicionar fotos</div><div class="upload-label-sub">Até 5 por item</div></div>';
+        upLabel.insertBefore(upInput, upLabel.firstChild);
+        var prevGrid = document.createElement('div');
+        prevGrid.className = 'preview-grid';
+        prevGrid.id = 'prev-' + chave;
+        upWrap.appendChild(upLabel);
+        upWrap.appendChild(prevGrid);
+        iBody.appendChild(upWrap);
       }
 
-      // Upload de fotos — oculto para item de chaves
-      if (item.indexOf('Chaves entregues') === 0) {
-        // nada — o bloco de chaves já foi inserido acima
-      } else {
-      var upWrap = document.createElement('div');
-      upWrap.style.marginTop = '10px';
-
-      var upLabel = document.createElement('label');
-      upLabel.className = 'upload-label';
-      upLabel.style.cursor = 'pointer';
-
-      var upInput = document.createElement('input');
-      upInput.type = 'file';
-      upInput.accept = 'image/*';
-      upInput.multiple = true;
-      upInput.style.display = 'none';
-      // Closure correto — sem strings inline
-      (function(c, it, ch) {
-        upInput.addEventListener('change', function() { handleItem(this, c, it, ch); });
-      })(comodo.nome, item, chave);
-
-      upLabel.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sky)" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><div><div class="upload-label-text">Adicionar fotos</div><div class="upload-label-sub">Até 5 por item</div></div>';
-      upLabel.insertBefore(upInput, upLabel.firstChild);
-
-      var prevGrid = document.createElement('div');
-      prevGrid.className = 'preview-grid';
-      prevGrid.id = 'prev-' + chave;
-
-      upWrap.appendChild(upLabel);
-      upWrap.appendChild(prevGrid);
-      iBody.appendChild(upWrap);
-      } // fim if não é chaves
       bloco.appendChild(iBody);
       body.appendChild(bloco);
     });
 
     sec.appendChild(body);
-
-    // Nav bar
     var nav = document.createElement('div');
     nav.className = 'nav-bar';
     nav.innerHTML = '<button class="btn btn-secondary" onclick="voltar()">←</button><button class="btn btn-primary" onclick="avancar()">Próximo →</button>';
     sec.appendChild(nav);
-
     container.appendChild(sec);
   });
 }
 
-function selEstado(btn){
-  var chave=btn.dataset.chave;
-  document.querySelectorAll('[data-chave="'+chave+'"]').forEach(function(b){b.className='estado-btn';});
-  var m={'Ótimo':'sel-otimo','Bom':'sel-bom','Regular':'sel-reg','Ruim':'sel-ruim','N/A':'sel-na'};
-  btn.classList.add(m[btn.dataset.estado]||'sel-na');
+function selEstado(btn) {
+  var chave = btn.dataset.chave;
+  document.querySelectorAll('[data-chave="' + chave + '"]').forEach(function(b) { b.className = 'estado-btn'; });
+  var m = {'Ótimo':'sel-otimo','Bom':'sel-bom','Regular':'sel-reg','Ruim':'sel-ruim','N/A':'sel-na'};
+  btn.classList.add(m[btn.dataset.estado] || 'sel-na');
 }
-function selEG(btn,val){
-  document.querySelectorAll('.eg-btn').forEach(function(b){b.classList.remove('sel');});
-  btn.classList.add('sel'); S.estadoGeral=val;
+function selEG(btn, val) {
+  document.querySelectorAll('.eg-btn').forEach(function(b){ b.classList.remove('sel'); });
+  btn.classList.add('sel');
+  S.estadoGeral = val;
 }
 
-function lerB64(file){return new Promise(function(res){var r=new FileReader();r.onload=function(e){res(e.target.result);};r.readAsDataURL(file);});}
+// ══════════════════════════════════════════════════════════
+//  UPLOAD DE FOTOS
+// ══════════════════════════════════════════════════════════
+function lerB64(file) { return new Promise(function(res){ var r = new FileReader(); r.onload = function(e){ res(e.target.result); }; r.readAsDataURL(file); }); }
 
-function handleItem(input,comodo,item,chave){
-  // Suporte a data-attributes (novo) e parâmetros diretos (legado)
+function handleItem(input, comodo, item, chave) {
   comodo = comodo || input.dataset.comodo || '';
-  item   = item   || input.dataset.item   || '';
-  chave  = chave  || input.dataset.chave  || slugify(comodo+'__'+item);
-  var files=Array.from(input.files).slice(0,5);
-  if(!S.fotosComodo[chave])S.fotosComodo[chave]=[];
-  var prev=document.getElementById('prev-'+chave);
-  files.forEach(function(f){
-    if(S.fotosComodo[chave].length>=5)return;
-    lerB64(f).then(function(b64){S.fotosComodo[chave].push({base64:b64,comodo:comodo,item:item});renderPrev(prev,S.fotosComodo[chave],chave);});
-  });
-  input.value='';
-}
-function handleMedidor(input,tipo){
-  var f=input.files[0];if(!f)return;
-  lerB64(f).then(function(b64){
-    S.fotosMedidor[tipo]={base64:b64,comodo:'Medidores',item:tipo};
-    var prev=document.getElementById('prev-'+tipo);prev.innerHTML='';
-    prev.appendChild(thumb(b64,function(){S.fotosMedidor[tipo]=null;prev.innerHTML='';}));
-  });input.value='';
-}
-function handleGeral(input){
-  var files=Array.from(input.files).slice(0,10-S.fotosGerais.length);
-  var prev=document.getElementById('prev-geral');
-  files.forEach(function(f){
-    if(S.fotosGerais.length>=10)return;
-    lerB64(f).then(function(b64){
-      var idx=S.fotosGerais.push({base64:b64,comodo:'Geral',item:'Foto'})-1;
-      prev.appendChild(thumb(b64,function(){S.fotosGerais.splice(idx,1);renderPrevGeral(prev);}));
+  item = item || input.dataset.item || '';
+  chave = chave || input.dataset.chave || slugify(comodo + '__' + item);
+  var files = Array.from(input.files).slice(0, 5);
+  if (!S.fotosComodo[chave]) S.fotosComodo[chave] = [];
+  var prev = document.getElementById('prev-' + chave);
+  files.forEach(function(f) {
+    if (S.fotosComodo[chave].length >= 5) return;
+    lerB64(f).then(function(b64) {
+      S.fotosComodo[chave].push({ base64: b64, comodo: comodo, item: item });
+      renderPrev(prev, S.fotosComodo[chave], chave);
     });
-  });input.value='';
-}
-function renderPrev(c,arr,chave){c.innerHTML='';arr.forEach(function(f,i){c.appendChild(thumb(f.base64,function(){arr.splice(i,1);renderPrev(c,arr,chave);}));});}
-function renderPrevGeral(c){c.innerHTML='';S.fotosGerais.forEach(function(f,i){c.appendChild(thumb(f.base64,function(){S.fotosGerais.splice(i,1);renderPrevGeral(c);}));});}
-function thumb(src,onRemove){
-  var d=document.createElement('div');d.className='preview-thumb';
-  var img=document.createElement('img');img.src=src;
-  var btn=document.createElement('button');btn.className='remove-btn';btn.textContent='✕';
-  btn.onclick=function(e){e.stopPropagation();e.preventDefault();onRemove();d.remove();};
-  d.appendChild(img);d.appendChild(btn);return d;
+  });
+  input.value = '';
 }
 
-// Coleta apenas dados textuais (sem base64) — para POST
-function coletarDadosSemFotos(){
-  var comodos=S.imovelSel.comodos.map(function(comodo){
-    var itens=comodo.itens.map(function(item){
-      var chave=slugify(comodo.nome+'__'+item);
-      var sel=document.querySelector('[data-chave="'+chave+'"].sel-otimo,[data-chave="'+chave+'"].sel-bom,[data-chave="'+chave+'"].sel-reg,[data-chave="'+chave+'"].sel-ruim,[data-chave="'+chave+'"].sel-na');
-      return{nome:item,estado:sel?sel.dataset.estado:'',observacao:(document.getElementById('obs-'+chave)||{}).value||''};
-    });
-    return{nome:comodo.nome,itens:itens};
+function handleMedidor(input, tipo) {
+  var f = input.files[0]; if (!f) return;
+  lerB64(f).then(function(b64) {
+    S.fotosMedidor[tipo] = { base64: b64, comodo: 'Medidores', item: tipo };
+    var prev = document.getElementById('prev-' + tipo);
+    prev.innerHTML = '';
+    prev.appendChild(thumb(b64, function(){ S.fotosMedidor[tipo] = null; prev.innerHTML = ''; }));
   });
-  return{
-    imovelId:S.imovelSel.id,
-    vistoriador:document.getElementById('inp-vistoriador').value.trim(),
-    data:document.getElementById('inp-data').value,
-    tipoVistoria:document.getElementById('sel-tipo').value,
-    obsIniciais:document.getElementById('inp-obs-ini').value.trim(),
-    estadoGeral:S.estadoGeral,
-    condicoesUso:document.getElementById('sel-condicoes').value,
-    pendencias:document.getElementById('inp-pendencias').value.trim(),
-    medidorEnergia:document.getElementById('inp-energia').value.trim(),
-    hidrometro:document.getElementById('inp-agua').value.trim(),
-    comodos:comodos
+  input.value = '';
+}
+
+function handleGeral(input) {
+  var files = Array.from(input.files).slice(0, 10 - S.fotosGerais.length);
+  var prev = document.getElementById('prev-geral');
+  files.forEach(function(f) {
+    if (S.fotosGerais.length >= 10) return;
+    lerB64(f).then(function(b64) {
+      var idx = S.fotosGerais.push({ base64: b64, comodo: 'Geral', item: 'Foto' }) - 1;
+      prev.appendChild(thumb(b64, function(){ S.fotosGerais.splice(idx, 1); renderPrevGeral(prev); }));
+    });
+  });
+  input.value = '';
+}
+
+function renderPrev(container, arr, chave) {
+  container.innerHTML = '';
+  arr.forEach(function(f, i) {
+    container.appendChild(thumb(f.base64, function() { arr.splice(i, 1); renderPrev(container, arr, chave); }));
+  });
+}
+function renderPrevGeral(container) {
+  container.innerHTML = '';
+  S.fotosGerais.forEach(function(f, i) {
+    container.appendChild(thumb(f.base64, function() { S.fotosGerais.splice(i, 1); renderPrevGeral(container); }));
+  });
+}
+function thumb(src, onRemove) {
+  var d = document.createElement('div'); d.className = 'preview-thumb';
+  var img = document.createElement('img'); img.src = src;
+  var btn = document.createElement('button'); btn.className = 'remove-btn'; btn.textContent = '✕';
+  btn.onclick = function(e){ e.stopPropagation(); e.preventDefault(); onRemove(); d.remove(); };
+  d.appendChild(img); d.appendChild(btn);
+  return d;
+}
+
+// ══════════════════════════════════════════════════════════
+//  COLETA DE DADOS
+// ══════════════════════════════════════════════════════════
+function coletarDados() {
+  var comodos = S.imovelSel.comodos.map(function(comodo) {
+    var itens = comodo.itens.map(function(item) {
+      var chave = slugify(comodo.nome + '__' + item);
+      if (item.indexOf('Chaves entregues') === 0) {
+        return {
+          nome: item,
+          declaracao: document.getElementById('chk-' + chave) ? document.getElementById('chk-' + chave).checked : false,
+          descricao: (document.getElementById('obs-' + chave) || {}).value || ''
+        };
+      }
+      var sel = document.querySelector('[data-chave="' + chave + '"].sel-otimo,[data-chave="' + chave + '"].sel-bom,[data-chave="' + chave + '"].sel-reg,[data-chave="' + chave + '"].sel-ruim,[data-chave="' + chave + '"].sel-na');
+      return {
+        nome: item,
+        estado: sel ? sel.dataset.estado : '',
+        observacao: (document.getElementById('obs-' + chave) || {}).value || ''
+      };
+    });
+    return { nome: comodo.nome, itens: itens };
+  });
+
+  var fotos = [];
+  Object.values(S.fotosComodo).forEach(function(arr) { arr.forEach(function(f){ fotos.push(f); }); });
+  if (S.fotosMedidor.energia) fotos.push(S.fotosMedidor.energia);
+  if (S.fotosMedidor.agua) fotos.push(S.fotosMedidor.agua);
+  S.fotosGerais.forEach(function(f){ fotos.push(f); });
+
+  return {
+    imovel: S.imovelSel,
+    vistoriador: document.getElementById('inp-vistoriador').value.trim(),
+    data: document.getElementById('inp-data').value,
+    tipoVistoria: document.getElementById('sel-tipo').value,
+    obsIniciais: document.getElementById('inp-obs-ini').value.trim(),
+    estadoGeral: S.estadoGeral,
+    condicoesUso: document.getElementById('sel-condicoes').value,
+    pendencias: document.getElementById('inp-pendencias').value.trim(),
+    medidorEnergia: document.getElementById('inp-energia').value.trim(),
+    hidrometro: document.getElementById('inp-agua').value.trim(),
+    comodos: comodos,
+    fotos: fotos
   };
 }
 
-// Coleta apenas as fotos (base64) — para upload individual
-function coletarFotos(){
-  var fotos=[];
-  Object.values(S.fotosComodo).forEach(function(arr){arr.forEach(function(f){fotos.push(f);});});
-  if(S.fotosMedidor.energia)fotos.push(S.fotosMedidor.energia);
-  if(S.fotosMedidor.agua)fotos.push(S.fotosMedidor.agua);
-  S.fotosGerais.forEach(function(f){fotos.push(f);});
-  return fotos;
+// ══════════════════════════════════════════════════════════
+//  GERAR PDF (client-side com jsPDF)
+// ══════════════════════════════════════════════════════════
+function gerarPDF(dados) {
+  var { jsPDF } = window.jspdf;
+  var doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  var pageW = doc.internal.pageSize.getWidth();
+  var margin = 15;
+  var y = 15;
+
+  // Cabeçalho
+  doc.setFillColor(15, 39, 68);
+  doc.rect(0, 0, pageW, 30, 'F');
+  doc.setTextColor(255,255,255);
+  doc.setFontSize(16); doc.setFont(undefined, 'bold');
+  doc.text('Termo de Vistoria de ' + dados.tipoVistoria, margin, 15);
+  doc.setFontSize(9); doc.setFont(undefined, 'normal');
+  doc.text('Documento com validade probatória contratual', margin, 22);
+
+  y = 40;
+  doc.setTextColor(31, 41, 55);
+  doc.setFontSize(10);
+
+  // Bloco de informações
+  doc.setFillColor(240, 244, 248);
+  doc.rect(margin, y, pageW - 2*margin, 32, 'F');
+  y += 6;
+  doc.setFont(undefined, 'bold'); doc.text('Imóvel:', margin + 3, y);
+  doc.setFont(undefined, 'normal'); doc.text(String(dados.imovel.endereco).substring(0,100), margin + 20, y);
+  y += 6;
+  doc.setFont(undefined, 'bold'); doc.text('Locatário:', margin + 3, y);
+  doc.setFont(undefined, 'normal'); doc.text(String(dados.imovel.locatario || '—'), margin + 25, y);
+  y += 6;
+  doc.setFont(undefined, 'bold'); doc.text('Data:', margin + 3, y);
+  doc.setFont(undefined, 'normal'); doc.text(dados.data, margin + 15, y);
+  doc.setFont(undefined, 'bold'); doc.text('Vistoriador:', margin + 70, y);
+  doc.setFont(undefined, 'normal'); doc.text(dados.vistoriador, margin + 95, y);
+  y += 6;
+  doc.setFont(undefined, 'bold'); doc.text('Tipo:', margin + 3, y);
+  doc.setFont(undefined, 'normal'); doc.text(dados.tipoVistoria, margin + 15, y);
+  doc.setFont(undefined, 'bold'); doc.text('Estado Geral:', margin + 70, y);
+  doc.setFont(undefined, 'normal'); doc.text(dados.estadoGeral || '—', margin + 100, y);
+  y += 10;
+
+  // Tabela de cômodos
+  var rows = [];
+  dados.comodos.forEach(function(comodo) {
+    rows.push([{ content: comodo.nome, colSpan: 3, styles: { fillColor: [26, 58, 92], textColor: 255, fontStyle: 'bold' } }]);
+    comodo.itens.forEach(function(item) {
+      if (item.declaracao !== undefined) {
+        rows.push([
+          item.nome,
+          item.declaracao ? '✓ Declarado' : '— Não declarado',
+          item.descricao || '—'
+        ]);
+      } else {
+        rows.push([item.nome, item.estado || 'N/A', item.observacao || '—']);
+      }
+    });
+  });
+
+  doc.autoTable({
+    startY: y,
+    head: [['Item', 'Estado', 'Observações']],
+    body: rows,
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [26, 58, 92], textColor: 255 },
+    columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 30, halign: 'center' }, 2: { cellWidth: 'auto' } },
+    margin: { left: margin, right: margin }
+  });
+
+  y = doc.lastAutoTable.finalY + 8;
+  if (y > 250) { doc.addPage(); y = 20; }
+
+  // Bloco medidores
+  doc.setFillColor(240, 244, 248);
+  doc.rect(margin, y, pageW - 2*margin, 20, 'F');
+  y += 6;
+  doc.setFont(undefined, 'bold'); doc.text('Medidor de Energia:', margin + 3, y);
+  doc.setFont(undefined, 'normal'); doc.text(dados.medidorEnergia || '—', margin + 45, y);
+  doc.setFont(undefined, 'bold'); doc.text('Hidrômetro:', margin + 110, y);
+  doc.setFont(undefined, 'normal'); doc.text(dados.hidrometro || '—', margin + 135, y);
+  y += 6;
+  doc.setFont(undefined, 'bold'); doc.text('Condições de uso:', margin + 3, y);
+  doc.setFont(undefined, 'normal'); doc.text(dados.condicoesUso || '—', margin + 40, y);
+  y += 15;
+
+  if (dados.pendencias) {
+    if (y > 250) { doc.addPage(); y = 20; }
+    doc.setFont(undefined, 'bold'); doc.text('Pendências:', margin, y);
+    y += 5;
+    doc.setFont(undefined, 'normal');
+    var linhas = doc.splitTextToSize(dados.pendencias, pageW - 2*margin);
+    doc.text(linhas, margin, y);
+    y += linhas.length * 5 + 5;
+  }
+
+  if (y > 240) { doc.addPage(); y = 20; }
+  doc.setDrawColor(221, 227, 234);
+  doc.rect(margin, y, pageW - 2*margin, 30);
+  y += 6;
+  doc.setFont(undefined, 'bold'); doc.setFontSize(9);
+  doc.text('Declaração:', margin + 3, y);
+  y += 5;
+  doc.setFont(undefined, 'normal'); doc.setFontSize(8);
+  var decl = doc.splitTextToSize('O vistoriador declara que as informações e fotografias registradas refletem fielmente o estado do imóvel nesta data.', pageW - 2*margin - 6);
+  doc.text(decl, margin + 3, y);
+  y += decl.length * 4 + 5;
+  doc.text('Assinatura: _______________________________     Data: ___/___/______', margin + 3, y);
+
+  return doc;
 }
 
-async function enviarVistoria(){
-  if(!S.estadoGeral){toast('Selecione o estado geral.','error');return;}
-  if(!document.getElementById('sel-condicoes').value){toast('Informe as condições de uso.','error');return;}
-  // Medidores opcionais — sem validação obrigatória
-  if(!document.getElementById('chk-declaracao').checked){toast('Confirme a declaração de veracidade.','error');return;}
+// ══════════════════════════════════════════════════════════
+//  ENVIAR — GERA PDF + ZIP E BAIXA
+// ══════════════════════════════════════════════════════════
+async function enviarVistoria() {
+  if (!S.estadoGeral) { toast('Selecione o estado geral.','error'); return; }
+  if (!document.getElementById('sel-condicoes').value) { toast('Informe as condições de uso.','error'); return; }
+  if (!document.getElementById('chk-declaracao').checked) { toast('Confirme a declaração de veracidade.','error'); return; }
 
-  document.getElementById('btn-enviar').disabled=true;
-  var dados = coletarDadosSemFotos();
+  document.getElementById('btn-enviar').disabled = true;
+  loading(true, 'Gerando PDF...');
 
   try {
-    // ETAPA 1: Criar pasta no Drive
-    loading(true,'Criando pasta no Drive...');
-    var imovel = S.imoveis.find(function(i){return i.id===dados.imovelId;});
-    var resPasta = await api('criarPastaVistoria',{
-      enderecoImovel: imovel.endereco,
-      tipoVistoria: dados.tipoVistoria,
-      data: dados.data,
-      vistoriador: dados.vistoriador
+    var dados = coletarDados();
+    var pdf = gerarPDF(dados);
+    var pdfBlob = pdf.output('blob');
+
+    loading(true, 'Empacotando fotos no ZIP...');
+    var zip = new JSZip();
+    var nomeBase = 'Vistoria_' + dados.tipoVistoria + '_' + dados.data + '_' + dados.vistoriador.replace(/\s+/g, '_');
+    zip.file(nomeBase + '.pdf', pdfBlob);
+
+    var pastaFotos = zip.folder('fotos');
+    var contador = {};
+    dados.fotos.forEach(function(foto) {
+      var chave = foto.comodo + '_' + foto.item;
+      contador[chave] = (contador[chave] || 0) + 1;
+      var nome = (foto.comodo + '_' + foto.item + '_' + contador[chave] + '.jpg')
+        .replace(/[^a-zA-Z0-9_\-.]/g, '_').substring(0, 80);
+      var base64 = foto.base64.split(',')[1] || foto.base64;
+      pastaFotos.file(nome, base64, { base64: true });
     });
-    if(!resPasta.sucesso){throw new Error(resPasta.erro||'Erro ao criar pasta');}
-    var pastaId = resPasta.pastaId;
 
-    // ETAPA 2: Upload das fotos uma a uma
-    var todasFotos = coletarFotos();
-    var total = todasFotos.length;
-    for(var i=0; i<todasFotos.length; i++){
-      var foto = todasFotos[i];
-      loading(true,'Enviando foto '+(i+1)+' de '+total+'...');
-      var nome = (foto.comodo+'_'+foto.item+'_'+(i+1)+'.jpg').replace(/[^a-zA-Z0-9_\-.]/g,'_').substring(0,80);
-      await api('uploadFoto',{ pastaId: pastaId, base64: foto.base64, nome: nome });
-    }
+    loading(true, 'Preparando download...');
+    var zipBlob = await zip.generateAsync({ type: 'blob' }, function(meta) {
+      loading(true, 'Compactando... ' + Math.round(meta.percent) + '%');
+    });
 
-    // ETAPA 3: Gerar PDF e enviar e-mail
-    loading(true,'Gerando PDF e enviando e-mail...');
-    var resFinal = await api('finalizarVistoria',{ dados: dados, pastaId: pastaId });
     loading(false);
 
-    if(resFinal.sucesso){
-      var link=document.getElementById('successLink');
-      if(resFinal.urlPasta){link.href=resFinal.urlPasta;link.style.display='block';}
-      document.querySelectorAll('.section-card').forEach(function(el){el.style.display='none';});
-      document.getElementById('progressWrap').style.display='none';
-      document.getElementById('successScreen').classList.add('show');
-    } else {
-      toast('Erro: '+(resFinal.erro||'Tente novamente.'),'error');
-      document.getElementById('btn-enviar').disabled=false;
-    }
+    // Salvar ZIP
+    var url = URL.createObjectURL(zipBlob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = nomeBase + '.zip';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 5000);
+
+    // Também disponibiliza o PDF sozinho pra baixar
+    var pdfUrl = URL.createObjectURL(pdfBlob);
+    document.getElementById('btn-baixar-pdf').onclick = function() {
+      var a2 = document.createElement('a');
+      a2.href = pdfUrl;
+      a2.download = nomeBase + '.pdf';
+      document.body.appendChild(a2);
+      a2.click();
+      document.body.removeChild(a2);
+    };
+    document.getElementById('btn-baixar-pdf').style.display = 'flex';
+
+    document.querySelectorAll('.section-card').forEach(function(el){ el.style.display = 'none'; });
+    document.getElementById('progressWrap').style.display = 'none';
+    document.getElementById('successScreen').classList.add('show');
   } catch(e) {
     loading(false);
-    toast('Erro: '+e.message,'error');
-    document.getElementById('btn-enviar').disabled=false;
+    console.error(e);
+    toast('Erro: ' + e.message, 'error');
+    document.getElementById('btn-enviar').disabled = false;
   }
 }
 
-function abrirAdmin(){document.getElementById('adminOverlay').classList.add('open');document.getElementById('adminLogin').style.display='block';document.getElementById('adminPainel').style.display='none';document.getElementById('inp-senha-admin').value='';document.getElementById('login-erro').textContent='';}
-function fecharAdmin(){document.getElementById('adminOverlay').classList.remove('open');S.senhaAdmin='';}
-async function loginAdmin(){
-  var senha=document.getElementById('inp-senha-admin').value;
-  try{
-    var res=await api('verificarSenha',{senha:senha});
-    if(res.ok){S.senhaAdmin=senha;document.getElementById('adminLogin').style.display='none';document.getElementById('adminPainel').style.display='block';carregarImoveisAdmin();}
-    else document.getElementById('login-erro').textContent='Senha incorreta.';
-  }catch(e){document.getElementById('login-erro').textContent='Erro de conexão.';}
+// ══════════════════════════════════════════════════════════
+//  ADMIN — cadastro de imóveis salvo no localStorage
+// ══════════════════════════════════════════════════════════
+function abrirAdmin() {
+  document.getElementById('adminOverlay').classList.add('open');
+  document.getElementById('adminLogin').style.display = 'block';
+  document.getElementById('adminPainel').style.display = 'none';
+  document.getElementById('inp-senha-admin').value = '';
+  document.getElementById('login-erro').textContent = '';
+}
+function fecharAdmin() { document.getElementById('adminOverlay').classList.remove('open'); S.senhaAdmin = ''; }
+
+function loginAdmin() {
+  var senha = document.getElementById('inp-senha-admin').value;
+  if (senha === SENHA_ADMIN) {
+    S.senhaAdmin = senha;
+    document.getElementById('adminLogin').style.display = 'none';
+    document.getElementById('adminPainel').style.display = 'block';
+    carregarImoveisAdmin();
+  } else {
+    document.getElementById('login-erro').textContent = 'Senha incorreta.';
+  }
 }
 
-function switchTab(nome,btn,semLimpar){
-  document.querySelectorAll('.admin-tab').forEach(function(b){b.classList.remove('active');});btn.classList.add('active');
-  ['imoveis','novo','senha'].forEach(function(t){document.getElementById('tab-'+t).style.display=t===nome?'block':'none';});
-  if(nome==='imoveis')carregarImoveisAdmin();
-  if(nome==='novo'&&!semLimpar)limparFormImovel();
+function switchTab(nome, btn, semLimpar) {
+  document.querySelectorAll('.admin-tab').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  ['imoveis','novo','senha'].forEach(function(t) {
+    document.getElementById('tab-' + t).style.display = t === nome ? 'block' : 'none';
+  });
+  if (nome === 'imoveis') carregarImoveisAdmin();
+  if (nome === 'novo' && !semLimpar) limparFormImovel();
 }
 
-async function carregarImoveisAdmin(){
-  try{
-    var res=await api('getImoveis');var lista=res.data||[];
-    var c=document.getElementById('lista-imoveis');
-    if(!lista.length){c.innerHTML='<p style="color:var(--muted);font-size:14px;">Nenhum imóvel cadastrado.</p>';return;}
-    c.innerHTML='';
-    lista.forEach(function(im){
-      var div=document.createElement('div');div.className='imovel-card';
-      div.innerHTML='<span class="badge badge-'+im.status+'">'+im.status+'</span><h3 style="margin-top:6px;">'+im.endereco+'</h3><p>Locatário: '+(im.locatario||'—')+' · '+(im.comodos?im.comodos.length:0)+' cômodos</p>';
-      var actions=document.createElement('div');actions.className='imovel-card-actions';
-      var btnE=document.createElement('button');btnE.className='btn btn-secondary btn-sm';btnE.textContent='✏️ Editar';btnE.onclick=function(){editarImovel(im.id);};actions.appendChild(btnE);
-      if(im.status==='ativo'){var btnD=document.createElement('button');btnD.className='btn btn-danger btn-sm';btnD.textContent='Desativar';btnD.onclick=function(){desativarImovelAdmin(im.id);};actions.appendChild(btnD);}
-      div.appendChild(actions);c.appendChild(div);
-    });
-  }catch(e){document.getElementById('lista-imoveis').innerHTML='<p style="color:var(--ruim);">Erro ao carregar.</p>';}
+function salvarNoLocalStorage() {
+  var dados = { senhaAdmin: SENHA_ADMIN, imoveis: S.imoveis };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(dados));
 }
 
-async function editarImovel(id){
-  var res=await api('getImoveis');var im=(res.data||[]).find(function(i){return i.id===id;});if(!im)return;
-  document.getElementById('edit-id').value=im.id;
-  document.getElementById('edit-endereco').value=im.endereco||'';
-  document.getElementById('edit-locatario').value=im.locatario||'';
-  document.getElementById('edit-inicio').value=im.inicioLocacao||'';
-  document.getElementById('edit-status').value=im.status||'ativo';
-  renderComodosList(im.comodos||[]);
-  switchTab('novo',document.querySelectorAll('.admin-tab')[1],true);
+function carregarImoveisAdmin() {
+  var c = document.getElementById('lista-imoveis');
+  if (!S.imoveis.length) { c.innerHTML = '<p style="color:var(--muted);font-size:14px;">Nenhum imóvel cadastrado.</p>'; return; }
+  c.innerHTML = '';
+  S.imoveis.forEach(function(im) {
+    var div = document.createElement('div'); div.className = 'imovel-card';
+    div.innerHTML = '<span class="badge badge-' + im.status + '">' + im.status + '</span>'
+      + '<h3 style="margin-top:6px;">' + im.endereco + '</h3>'
+      + '<p>Locatário: ' + (im.locatario || '—') + ' · ' + (im.comodos ? im.comodos.length : 0) + ' cômodos</p>';
+    var actions = document.createElement('div'); actions.className = 'imovel-card-actions';
+    var btnE = document.createElement('button'); btnE.className = 'btn btn-secondary btn-sm'; btnE.textContent = '✏️ Editar';
+    btnE.onclick = function(){ editarImovel(im.id); };
+    actions.appendChild(btnE);
+    if (im.status === 'ativo') {
+      var btnD = document.createElement('button'); btnD.className = 'btn btn-danger btn-sm'; btnD.textContent = 'Desativar';
+      btnD.onclick = function(){ desativarImovelAdmin(im.id); };
+      actions.appendChild(btnD);
+    }
+    div.appendChild(actions);
+    c.appendChild(div);
+  });
 }
 
-var comodosEdit=[];
-function limparFormImovel(){document.getElementById('edit-id').value='';document.getElementById('edit-endereco').value='';document.getElementById('edit-locatario').value='';document.getElementById('edit-inicio').value='';document.getElementById('edit-status').value='ativo';comodosEdit=[];renderComodosList([]);}
-
-function renderComodosList(comodos){
-  comodosEdit=JSON.parse(JSON.stringify(comodos));
-  var c=document.getElementById('lista-comodos-edit');c.innerHTML='';
-  comodosEdit.forEach(function(cm,ci){c.appendChild(criarComodoEdit(cm,ci));});
+function editarImovel(id) {
+  var im = S.imoveis.find(function(i){ return i.id === id; });
+  if (!im) return;
+  document.getElementById('edit-id').value = im.id;
+  document.getElementById('edit-endereco').value = im.endereco || '';
+  document.getElementById('edit-locatario').value = im.locatario || '';
+  document.getElementById('edit-inicio').value = im.inicioLocacao || '';
+  document.getElementById('edit-status').value = im.status || 'ativo';
+  renderComodosList(im.comodos || []);
+  switchTab('novo', document.querySelectorAll('.admin-tab')[1], true);
 }
 
-function criarComodoEdit(comodo,ci){
-  var div=document.createElement('div');div.className='comodo-edit';div.setAttribute('data-ci',ci);
-  var hdr=document.createElement('div');hdr.className='comodo-edit-header';
-  var inp=document.createElement('input');inp.type='text';inp.value=comodo.nome||'';inp.placeholder='Nome do cômodo';inp.style.flex='1';
-  inp.addEventListener('input',(function(i){return function(){comodosEdit[i].nome=this.value;};})(ci));
-  var sel=document.createElement('select');sel.style.width='110px';
-  ['garage','outdoor','kitchen','living','bedroom','bathroom','electrical'].forEach(function(ic){var o=document.createElement('option');o.value=ic;o.textContent=ic;if(comodo.icone===ic)o.selected=true;sel.appendChild(o);});
-  sel.addEventListener('change',(function(i){return function(){comodosEdit[i].icone=this.value;};})(ci));
-  var btnR=document.createElement('button');btnR.className='btn btn-danger btn-sm';btnR.textContent='✕';
-  btnR.addEventListener('click',(function(i){return function(){removerComodo(i);};})(ci));
-  hdr.appendChild(inp);hdr.appendChild(sel);hdr.appendChild(btnR);div.appendChild(hdr);
-  var tagsDiv=document.createElement('div');tagsDiv.id='itens-ci-'+ci;tagsDiv.style.cssText='margin-bottom:8px;min-height:24px;';
-  (comodo.itens||[]).forEach(function(it,ii){tagsDiv.appendChild(criarItemTag(ci,ii,it));});div.appendChild(tagsDiv);
-  var row=document.createElement('div');row.style.cssText='display:flex;gap:8px;margin-top:8px;';
-  var inpI=document.createElement('input');inpI.type='text';inpI.id='inp-add-item-'+ci;inpI.placeholder='Novo item...';inpI.style.flex='1';
-  inpI.addEventListener('keydown',(function(i){return function(e){if(e.key==='Enter'){e.preventDefault();adicionarItem(i);}};})(ci));
-  var btnA=document.createElement('button');btnA.className='btn btn-primary btn-sm';btnA.textContent='+ Item';
-  btnA.addEventListener('click',(function(i){return function(){adicionarItem(i);};})(ci));
-  row.appendChild(inpI);row.appendChild(btnA);div.appendChild(row);
+var comodosEdit = [];
+function limparFormImovel() {
+  document.getElementById('edit-id').value = '';
+  document.getElementById('edit-endereco').value = '';
+  document.getElementById('edit-locatario').value = '';
+  document.getElementById('edit-inicio').value = '';
+  document.getElementById('edit-status').value = 'ativo';
+  comodosEdit = [];
+  renderComodosList([]);
+}
+
+function renderComodosList(comodos) {
+  comodosEdit = JSON.parse(JSON.stringify(comodos));
+  var c = document.getElementById('lista-comodos-edit'); c.innerHTML = '';
+  comodosEdit.forEach(function(cm, ci){ c.appendChild(criarComodoEdit(cm, ci)); });
+}
+
+function criarComodoEdit(comodo, ci) {
+  var div = document.createElement('div'); div.className = 'comodo-edit';
+  var hdr = document.createElement('div'); hdr.className = 'comodo-edit-header';
+  var inp = document.createElement('input'); inp.type = 'text'; inp.value = comodo.nome || ''; inp.placeholder = 'Nome do cômodo'; inp.style.flex = '1';
+  inp.addEventListener('input', (function(i){ return function(){ comodosEdit[i].nome = this.value; }; })(ci));
+  var sel = document.createElement('select'); sel.style.width = '110px';
+  ['garage','outdoor','kitchen','living','bedroom','bathroom','electrical'].forEach(function(ic) {
+    var o = document.createElement('option'); o.value = ic; o.textContent = ic;
+    if (comodo.icone === ic) o.selected = true; sel.appendChild(o);
+  });
+  sel.addEventListener('change', (function(i){ return function(){ comodosEdit[i].icone = this.value; }; })(ci));
+  var btnR = document.createElement('button'); btnR.className = 'btn btn-danger btn-sm'; btnR.textContent = '✕';
+  btnR.addEventListener('click', (function(i){ return function(){ removerComodo(i); }; })(ci));
+  hdr.appendChild(inp); hdr.appendChild(sel); hdr.appendChild(btnR); div.appendChild(hdr);
+  var tagsDiv = document.createElement('div'); tagsDiv.id = 'itens-ci-' + ci; tagsDiv.style.cssText = 'margin-bottom:8px;min-height:24px;';
+  (comodo.itens || []).forEach(function(it, ii){ tagsDiv.appendChild(criarItemTag(ci, ii, it)); });
+  div.appendChild(tagsDiv);
+  var row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;';
+  var inpI = document.createElement('input'); inpI.type = 'text'; inpI.id = 'inp-add-item-' + ci; inpI.placeholder = 'Novo item...'; inpI.style.flex = '1';
+  inpI.addEventListener('keydown', (function(i){ return function(e){ if(e.key==='Enter'){ e.preventDefault(); adicionarItem(i); } }; })(ci));
+  var btnA = document.createElement('button'); btnA.className = 'btn btn-primary btn-sm'; btnA.textContent = '+ Item';
+  btnA.addEventListener('click', (function(i){ return function(){ adicionarItem(i); }; })(ci));
+  row.appendChild(inpI); row.appendChild(btnA); div.appendChild(row);
   return div;
 }
 
-function criarItemTag(ci,ii,texto){
-  var span=document.createElement('span');span.className='item-tag';span.textContent=texto+' ';
-  var btn=document.createElement('button');btn.textContent='✕';
-  btn.addEventListener('click',(function(c,i){return function(){removerItem(c,i);};})(ci,ii));
-  span.appendChild(btn);return span;
+function criarItemTag(ci, ii, texto) {
+  var span = document.createElement('span'); span.className = 'item-tag'; span.textContent = texto + ' ';
+  var btn = document.createElement('button'); btn.textContent = '✕';
+  btn.addEventListener('click', (function(c, i){ return function(){ removerItem(c, i); }; })(ci, ii));
+  span.appendChild(btn); return span;
 }
 
-function adicionarComodo(){comodosEdit.push({nome:'',icone:'outdoor',itens:[]});renderComodosList(comodosEdit);}
-function removerComodo(ci){comodosEdit.splice(ci,1);renderComodosList(comodosEdit);}
-function adicionarItem(ci){
-  var inp=document.getElementById('inp-add-item-'+ci);var val=inp.value.trim();if(!val)return;
-  var ii=comodosEdit[ci].itens.push(val)-1;inp.value='';
-  document.getElementById('itens-ci-'+ci).appendChild(criarItemTag(ci,ii,val));
+function adicionarComodo() { comodosEdit.push({ nome: '', icone: 'outdoor', itens: [] }); renderComodosList(comodosEdit); }
+function removerComodo(ci) { comodosEdit.splice(ci, 1); renderComodosList(comodosEdit); }
+function adicionarItem(ci) {
+  var inp = document.getElementById('inp-add-item-' + ci);
+  var val = inp.value.trim(); if (!val) return;
+  var ii = comodosEdit[ci].itens.push(val) - 1; inp.value = '';
+  document.getElementById('itens-ci-' + ci).appendChild(criarItemTag(ci, ii, val));
 }
-function removerItem(ci,ii){comodosEdit[ci].itens.splice(ii,1);renderComodosList(comodosEdit);}
+function removerItem(ci, ii) { comodosEdit[ci].itens.splice(ii, 1); renderComodosList(comodosEdit); }
 
-async function salvarImovelAdmin(){
-  var end=document.getElementById('edit-endereco').value.trim();
-  if(!end){toast('Informe o endereço.','error');return;}
-  loading(true,'Salvando imóvel...');
-  try{
-    var res=await api('salvarImovel',{dados:{id:document.getElementById('edit-id').value||null,endereco:end,locatario:document.getElementById('edit-locatario').value.trim(),inicioLocacao:document.getElementById('edit-inicio').value,status:document.getElementById('edit-status').value,comodos:comodosEdit},senha:S.senhaAdmin});
-    loading(false);
-    if(res.sucesso){toast('Imóvel salvo!','success');carregarImoveis();limparFormImovel();switchTab('imoveis',document.querySelectorAll('.admin-tab')[0]);}
-    else toast('Erro: '+res.erro,'error');
-  }catch(e){loading(false);toast('Erro de conexão.','error');}
+function salvarImovelAdmin() {
+  var end = document.getElementById('edit-endereco').value.trim();
+  if (!end) { toast('Informe o endereço.','error'); return; }
+  var id = document.getElementById('edit-id').value;
+  var dados = {
+    id: id || 'imovel_' + Date.now(),
+    endereco: end,
+    locatario: document.getElementById('edit-locatario').value.trim(),
+    inicioLocacao: document.getElementById('edit-inicio').value,
+    status: document.getElementById('edit-status').value,
+    comodos: comodosEdit
+  };
+  if (id) {
+    var idx = S.imoveis.findIndex(function(i){ return i.id === id; });
+    if (idx >= 0) S.imoveis[idx] = dados;
+    else S.imoveis.push(dados);
+  } else {
+    S.imoveis.push(dados);
+  }
+  salvarNoLocalStorage();
+  toast('Imóvel salvo!', 'success');
+  preencherDropdown();
+  limparFormImovel();
+  switchTab('imoveis', document.querySelectorAll('.admin-tab')[0]);
 }
 
-async function desativarImovelAdmin(id){
-  if(!confirm('Desativar este imóvel?'))return;
-  var res=await api('desativarImovel',{id:id,senha:S.senhaAdmin});
-  if(res.sucesso){toast('Imóvel desativado.');carregarImoveisAdmin();carregarImoveis();}
-  else toast('Erro: '+res.erro,'error');
+function desativarImovelAdmin(id) {
+  if (!confirm('Desativar este imóvel?')) return;
+  var idx = S.imoveis.findIndex(function(i){ return i.id === id; });
+  if (idx >= 0) S.imoveis[idx].status = 'inativo';
+  salvarNoLocalStorage();
+  toast('Imóvel desativado.');
+  carregarImoveisAdmin();
+  preencherDropdown();
 }
 
-async function alterarSenhaAdmin(){
-  var res=await api('alterarSenha',{senhaAtual:document.getElementById('inp-senha-atual').value,novaSenha:document.getElementById('inp-senha-nova').value});
-  var msg=document.getElementById('senha-msg');
-  if(res.sucesso){S.senhaAdmin=document.getElementById('inp-senha-nova').value;msg.style.color='var(--ok)';msg.textContent='Senha alterada!';}
-  else{msg.style.color='var(--ruim)';msg.textContent=res.erro;}
+function alterarSenhaAdmin() {
+  var atual = document.getElementById('inp-senha-atual').value;
+  var nova = document.getElementById('inp-senha-nova').value;
+  var msg = document.getElementById('senha-msg');
+  if (atual !== SENHA_ADMIN) { msg.style.color = 'var(--ruim)'; msg.textContent = 'Senha atual incorreta.'; return; }
+  if (!nova || nova.length < 8) { msg.style.color = 'var(--ruim)'; msg.textContent = 'Nova senha deve ter ao menos 8 caracteres.'; return; }
+  SENHA_ADMIN = nova;
+  salvarNoLocalStorage();
+  msg.style.color = 'var(--ok)'; msg.textContent = 'Senha alterada!';
 }
 
-function toast(msg,tipo){var t=document.getElementById('toast');t.textContent=msg;t.className='toast '+(tipo||'')+' show';setTimeout(function(){t.classList.remove('show');},3500);}
-function loading(show,msg){document.getElementById('loadingOverlay').classList.toggle('open',show);if(msg)document.getElementById('loadingMsg').textContent=msg;}
+// ══════════════════════════════════════════════════════════
+//  UTILITÁRIOS
+// ══════════════════════════════════════════════════════════
+function toast(msg, tipo) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + (tipo || '') + ' show';
+  setTimeout(function(){ t.classList.remove('show'); }, 3500);
+}
+function loading(show, msg) {
+  document.getElementById('loadingOverlay').classList.toggle('open', show);
+  if (msg) document.getElementById('loadingMsg').textContent = msg;
+}
 </script>
 </body>
 </html>
