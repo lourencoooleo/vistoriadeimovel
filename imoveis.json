@@ -4,8 +4,8 @@
     {
       "id": "imovel_001",
       "endereco": "Rua Ademir Ferraz Carbonel, 191, Park Daville, Peruíbe-SP, 11771-482",
-      "locatario": "Edna Regina Espinosa",
-      "inicioLocacao": "2025-09-13",
+      "locatario": "Juliana Paes de Oliveira Pedroso",
+      "inicioLocacao": "",
       "status": "ativo",
       "comodos": [
         { "nome": "Quintal e Garagem", "icone": "garage",
