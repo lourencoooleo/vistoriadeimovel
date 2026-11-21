@@ -176,11 +176,6 @@ select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
 .attn { list-style: none; display: grid; gap: 8px; }
 .attn li { display: flex; gap: 10px; align-items: center; font-size: 14.5px; }
 .nofoto { font-style: normal; color: var(--ruim); font-weight: 700; font-size: 12.5px; }
-.sig { position: relative; border: 1.5px dashed #cfc5b1; border-radius: 12px; background: #fffdf8; }
-.sig canvas { display: block; width: 100%; height: 180px; touch-action: none; border-radius: 12px; }
-.sig-line { position: absolute; left: 18px; right: 18px; bottom: 40px; border-bottom: 1.5px solid #d9cfbb; pointer-events: none; }
-.sig-hint { position: absolute; left: 18px; bottom: 14px; font-size: 12.5px; color: var(--muted); pointer-events: none; }
-.sig-clear { position: absolute; top: 8px; right: 8px; background: #eef1f5; border: 0; border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 700; color: var(--navy); cursor: pointer; }
 
 /* ---------- envio ---------- */
 .steps { list-style: none; display: grid; gap: 2px; }

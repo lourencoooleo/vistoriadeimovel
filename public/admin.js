@@ -69,7 +69,7 @@
   }
   function msgVistoria(v) {
     const nome = v.vistoriadorNome ? ", " + v.vistoriadorNome.split(" ")[0] : "";
-    return `Olá${nome}! Segue o link da vistoria de ${v.tipo.toLowerCase()} do imóvel ${v.imovel.apelido} (${v.imovel.endereco}):\n\n${linkOf(v)}\n\nAbra no celular e siga cômodo por cômodo, marcando o estado de cada item e tirando as fotos. Tudo fica salvo no aparelho, então pode pausar e voltar pelo mesmo link. No final, você e o(a) locatário(a) assinam na tela e o termo chega pra mim automaticamente.`;
+    return `Olá${nome}! Segue o link da vistoria de ${v.tipo.toLowerCase()} do imóvel ${v.imovel.apelido} (${v.imovel.endereco}):\n\n${linkOf(v)}\n\nAbra no celular e siga cômodo por cômodo, marcando o estado de cada item e tirando as fotos. Tudo fica salvo no aparelho, então pode pausar e voltar pelo mesmo link. No final, confira o seu e-mail e o do(a) locatário(a) e envie: o termo chega pra mim e todos recebem o convite para assinar eletronicamente.`;
   }
   const waLink = (v) => "https://wa.me/?text=" + encodeURIComponent(msgVistoria(v));
 
@@ -171,7 +171,11 @@
   }
   function tabVistorias() {
     const banner = !S.google.connected
-      ? `<div class="banner warn">${ICON.alert}<div><b>Google Drive não conectado.</b> O vistoriador consegue preencher, mas não consegue enviar até você conectar. <button class="link" data-a="tab" data-t="config">Conectar agora</button></div></div>` : "";
+      ? `<div class="banner warn">${ICON.alert}<div><b>Google Drive não conectado.</b> O vistoriador consegue preencher, mas não consegue enviar até você conectar. <button class="link" data-a="tab" data-t="config">Conectar agora</button></div></div>`
+      : !S.assinafy.configured
+        ? `<div class="banner warn">${ICON.alert}<div><b>Assinafy não configurada.</b> As vistorias chegam ao Drive, mas os convites de assinatura não saem. <button class="link" data-a="tab" data-t="config">Ver como configurar</button></div></div>`
+        : !S.settings.locadorEmail
+          ? `<div class="banner warn">${ICON.alert}<div><b>Falta o seu e-mail.</b> Sem ele, você não entra como signatário quando o vistoriador envia o termo. <button class="link" data-a="tab" data-t="config">Cadastrar agora</button></div></div>` : "";
     return `${banner}
     <section class="card">
       <h2>${ICON.link} Nova vistoria</h2>
@@ -257,7 +261,7 @@
     <section class="card">
       <div class="card-head"><h2>${ICON.pen} Assinafy</h2><span class="status ${S.assinafy.configured ? "green" : "gray"}">${S.assinafy.configured ? "Configurada" : "Não configurada"}</span></div>
       ${S.assinafy.configured
-        ? `<p class="meta">Pronta. Depois que uma vistoria chega, use <b>Enviar para assinatura</b> no histórico.</p>
+        ? `<p class="meta">Pronta. Quando o vistoriador envia a vistoria, os convites de assinatura saem automaticamente para você, o(a) locatário(a) e o vistoriador. Se algum envio falhar, use <b>Enviar para assinatura</b> no histórico.</p>
            ${S.assinafy.webhookUrl
              ? `<div class="field" style="margin:14px 0 0"><span>URL do webhook (cole na Assinafy › Integrações › Webhooks)</span>
                  <div class="linkbox"><input readonly value="${esc(S.assinafy.webhookUrl)}"><button class="btn btn-soft" data-a="copyText" data-text="${esc(S.assinafy.webhookUrl)}">${ICON.copy}</button></div></div>

@@ -6,7 +6,7 @@
   const app = document.getElementById("app");
   const token = new URLSearchParams(location.search).get("v");
   let C = null, D = null, screen = "intro", roomIdx = 0;
-  let pads = {}, lastPdf = null, lastData = null, sending = false, sendState = null;
+  let lastPartes = null, nFotosEnviadas = 0, lastPdf = null, lastData = null, sending = false, sendState = null;
   const openObs = new Set();
   const urlCache = new Map();
 
@@ -190,15 +190,14 @@
   // ---------- rascunho ----------
   function newDraft() {
     return {
-      v: 2, iniciado: false,
+      v: 3, iniciado: false,
       vistoriador: { nome: C.vistoriadorNome || "", cpf: "", email: "" }, data: hojeISO(),
       itens: C.imovel.comodos.map((c) => c.itens.map(() => ({ estado: "", obs: "", fotos: [] }))),
       comodos: C.imovel.comodos.map(() => ({ obs: "", fotos: [] })),
       medidores: { energia: { leitura: "", fotos: [] }, agua: { leitura: "", fotos: [] } },
       chaves: { qtd: "", desc: "", declarado: false },
       geral: { estado: "", obs: "", fotos: [] },
-      locatario: { nome: C.imovel.locatario || "", cpf: C.imovel.locatarioCpf || "", email: C.imovel.locatarioEmail || "", ausente: false },
-      assin: { vistoriador: null, locatario: null, vistoriadorEm: null, locatarioEm: null },
+      locatario: { nome: C.imovel.locatario || "", cpf: C.imovel.locatarioCpf || "", email: C.imovel.locatarioEmail || "" },
       declaracao: false, photos: {}, uploaded: {},
     };
   }
@@ -240,14 +239,14 @@
         <ol class="howto">
           <li><b>Passe por cada cômodo</b> e toque no estado de cada item.</li>
           <li><b>Fotografe</b> o ambiente e, principalmente, qualquer defeito.</li>
-          <li><b>No final</b>, você e o(a) locatário(a) assinam na tela e o termo é enviado.</li>
+          <li><b>No final</b>, confira os e-mails e envie: todos recebem o termo para assinar eletronicamente.</li>
         </ol>
         <p class="hint">${ICON.phone}<span>Tudo fica salvo neste celular enquanto você preenche. Pode fechar e voltar pelo mesmo link. A internet só é necessária no envio.</span></p>
       </section>
       <section class="card">
         <h2>Seus dados</h2>
         <label class="field"><span>Seu nome completo</span><input data-bind="vistoriador.nome" value="${esc(D.vistoriador.nome)}" autocomplete="name" placeholder="Nome de quem faz a vistoria"></label>
-        <label class="field"><span>E-mail</span><input type="email" data-bind="vistoriador.email" value="${esc(D.vistoriador.email)}" autocomplete="email" inputmode="email" placeholder="Para assinar o termo eletronicamente"></label>
+        <label class="field"><span>E-mail</span><input type="email" data-bind="vistoriador.email" value="${esc(D.vistoriador.email)}" autocomplete="email" inputmode="email" placeholder="Para receber o termo e assinar"></label>
         <label class="field"><span>CPF <em>opcional</em></span><input data-bind="vistoriador.cpf" value="${esc(D.vistoriador.cpf)}" inputmode="numeric" placeholder="000.000.000-00"></label>
         <label class="field"><span>Data da vistoria</span><input type="date" data-bind="data" value="${esc(D.data)}"></label>
       </section>
@@ -287,7 +286,7 @@
           <span class="row-main"><span class="row-title">Medidores e chaves</span><span class="row-sub">${esc(extrasSub)}</span></span><span class="row-chev">${ICON.chev}</span></button>
       </div>
     </main>
-    <div class="cta-bar"><div><button class="btn btn-primary btn-block" data-a="toSign">${s.falta ? `Revisar e assinar · faltam ${s.falta}` : `${ICON.pen} Revisar e assinar`}</button></div></div>`;
+    <div class="cta-bar"><div><button class="btn btn-primary btn-block" data-a="toSign">${s.falta ? `Revisar e enviar · faltam ${s.falta}` : `${ICON.send} Revisar e enviar`}</button></div></div>`;
   }
 
   function itemCard(r, i, nome) {
@@ -368,13 +367,9 @@
     <div class="cta-bar"><div><button class="btn btn-primary btn-block" data-a="home">Concluir</button></div></div>`;
   }
 
-  function sigBox(who) {
-    return `<div class="sig"><canvas data-sig="${who}"></canvas><div class="sig-line"></div><div class="sig-hint">Assine com o dedo acima da linha</div><button class="sig-clear" data-a="clearSig" data-who="${who}">Limpar</button></div>`;
-  }
-
   function renderAssinar() {
     const s = stats(), counts = contagem(), attn = atencao();
-    app.innerHTML = `${topbar("Revisar e assinar", `${s.total} itens · ${plural(s.fotos, "foto", "fotos")}`)}
+    app.innerHTML = `${topbar("Revisar e enviar", `${s.total} itens · ${plural(s.fotos, "foto", "fotos")}`)}
     <main class="wrap">
       <section class="card"><h2>Resumo</h2>
         <div class="count-row">${ESTADOS.map((e) => `<div class="count est-${CLS[e]}"><b>${counts[e]}</b>${e}</div>`).join("")}</div>
@@ -382,73 +377,24 @@
           ? `<h3 class="attn-title">Pontos de atenção</h3><ul class="attn">${attn.map((a) => `<li><span class="badge est-${CLS[a.estado]}">${a.estado}</span><span>${esc(a.comodo)} · ${esc(a.item)}${a.fotos ? "" : ' <em class="nofoto">sem foto</em>'}</span></li>`).join("")}</ul>`
           : `<p class="hint" style="margin:0">${ICON.check}<span>Nenhum item regular ou ruim.</span></p>`}
       </section>
-      <section class="card"><h2>${ICON.pen} Vistoriador(a)</h2>
+      <section class="card"><h2>${ICON.user} Vistoriador(a)</h2>
+        <label class="field"><span>Nome completo</span><input data-bind="vistoriador.nome" value="${esc(D.vistoriador.nome)}" autocomplete="name"></label>
         <div class="grid2">
-          <label class="field"><span>Nome</span><input data-bind="vistoriador.nome" value="${esc(D.vistoriador.nome)}"></label>
+          <label class="field"><span>E-mail</span><input type="email" data-bind="vistoriador.email" value="${esc(D.vistoriador.email)}" inputmode="email" autocomplete="email"></label>
           <label class="field"><span>CPF <em>opcional</em></span><input data-bind="vistoriador.cpf" value="${esc(D.vistoriador.cpf)}" inputmode="numeric"></label>
-        </div>${sigBox("vistoriador")}
+        </div>
       </section>
-      <section class="card"><h2>${ICON.pen} Locatário(a)</h2>
+      <section class="card"><h2>${ICON.user} Locatário(a)</h2>
+        <label class="field"><span>Nome completo</span><input data-bind="locatario.nome" value="${esc(D.locatario.nome)}"></label>
         <div class="grid2">
-          <label class="field"><span>Nome</span><input data-bind="locatario.nome" value="${esc(D.locatario.nome)}"></label>
+          <label class="field"><span>E-mail</span><input type="email" data-bind="locatario.email" value="${esc(D.locatario.email)}" inputmode="email" placeholder="Confira com o(a) locatário(a)"></label>
           <label class="field"><span>CPF <em>opcional</em></span><input data-bind="locatario.cpf" value="${esc(D.locatario.cpf)}" inputmode="numeric"></label>
         </div>
-        <label class="field"><span>E-mail do(a) locatário(a)</span><input type="email" data-bind="locatario.email" value="${esc(D.locatario.email)}" inputmode="email" placeholder="Para receber o termo e assinar eletronicamente"></label>
-        <label class="check compact"><input type="checkbox" data-bind="locatario.ausente" data-rerender="1" ${D.locatario.ausente ? "checked" : ""}><span>O(a) locatário(a) não está presente e vai assinar eletronicamente depois.</span></label>
-        ${D.locatario.ausente ? "" : sigBox("locatario")}
       </section>
-      <section class="card note"><b>${esc(C.locadorNome || "O locador")}</b> assina eletronicamente depois que o termo chegar. Com os e-mails preenchidos, todos recebem o convite para a assinatura eletrônica.</section>
+      <section class="card note">${ICON.send} Ao enviar, o termo vai para o responsável e <b>você, o(a) locatário(a) e ${esc(C.locadorNome || "o locador")}</b> recebem por e-mail o convite para assinar eletronicamente. Confira os e-mails com atenção.</section>
       <label class="check"><input type="checkbox" data-bind="declaracao" ${D.declaracao ? "checked" : ""}><span>Declaro que as informações e fotos registradas refletem fielmente o estado do imóvel nesta data.</span></label>
     </main>
-    <div class="cta-bar"><div><button class="btn btn-primary btn-block" data-a="send">${ICON.send} Gerar termo e enviar</button></div></div>`;
-    mountPads();
-  }
-
-  // ---------- assinatura ----------
-  function sigPad(canvas, initial, onChange) {
-    const rect = canvas.getBoundingClientRect();
-    const ratio = Math.max(window.devicePixelRatio || 1, 1);
-    canvas.width = Math.round(rect.width * ratio); canvas.height = Math.round(rect.height * ratio);
-    const ctx = canvas.getContext("2d");
-    ctx.scale(ratio, ratio);
-    ctx.lineWidth = 2.4; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#12233d"; ctx.fillStyle = "#12233d";
-    if (initial && initial.full) { const im = new Image(); im.onload = () => ctx.drawImage(im, 0, 0, rect.width, rect.height); im.src = initial.full; }
-    let drawing = false, last = null;
-    const pt = (e) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
-    canvas.onpointerdown = (e) => { drawing = true; canvas.setPointerCapture(e.pointerId); last = pt(e); ctx.beginPath(); ctx.arc(last.x, last.y, 1.2, 0, Math.PI * 2); ctx.fill(); };
-    canvas.onpointermove = (e) => {
-      if (!drawing) return;
-      const p = pt(e);
-      ctx.beginPath(); ctx.moveTo(last.x, last.y);
-      ctx.quadraticCurveTo(last.x, last.y, (last.x + p.x) / 2, (last.y + p.y) / 2);
-      ctx.lineTo(p.x, p.y); ctx.stroke(); last = p;
-    };
-    // exporta só a área desenhada (sem a margem vazia), para a assinatura ficar grande no PDF
-    function trimmed() {
-      const { width: w, height: h } = canvas;
-      const px = canvas.getContext("2d").getImageData(0, 0, w, h).data;
-      let x0 = w, y0 = h, x1 = -1, y1 = -1;
-      for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
-        if (px[(y * w + x) * 4 + 3] > 10) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-      }
-      if (x1 < 0) return null;
-      const pad = 12 * ratio;
-      x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(w, x1 + pad); y1 = Math.min(h, y1 + pad);
-      const out = document.createElement("canvas");
-      out.width = x1 - x0; out.height = y1 - y0;
-      out.getContext("2d").drawImage(canvas, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
-      return { full: canvas.toDataURL("image/png"), crop: out.toDataURL("image/png") };
-    }
-    const end = () => { if (!drawing) return; drawing = false; onChange(trimmed()); };
-    canvas.onpointerup = end; canvas.onpointercancel = end; canvas.onpointerleave = end;
-    return { clear() { ctx.clearRect(0, 0, rect.width, rect.height); onChange(null); } };
-  }
-  function mountPads() {
-    pads = {};
-    app.querySelectorAll("canvas[data-sig]").forEach((cv) => {
-      const who = cv.dataset.sig;
-      pads[who] = sigPad(cv, D.assin[who], (url) => { D.assin[who] = url; D.assin[who + "Em"] = url ? new Date().toISOString() : null; save(); });
-    });
+    <div class="cta-bar"><div><button class="btn btn-primary btn-block" data-a="send">${ICON.send} Enviar e pedir assinaturas</button></div></div>`;
   }
 
   // ---------- eventos ----------
@@ -503,10 +449,15 @@
       if (!D.geral.estado) { toast("Falta informar o estado geral do imóvel", "warn"); return go("geral"); }
       go("assinar");
     },
-    clearSig: (t) => pads[t.dataset.who]?.clear(),
     send: () => enviar(),
     retry: () => enviar(),
     backToSign: () => go("assinar"),
+    async retrySign(t) {
+      t.disabled = true; t.innerHTML = '<i class="spin"></i> Enviando os convites...';
+      let err = null;
+      try { await pedirAssinaturas(); } catch (e) { err = e.message || "Falha ao enviar os convites."; }
+      renderFim(err);
+    },
     downloadPdf() {
       if (!lastPdf) return;
       const a = document.createElement("a");
@@ -563,15 +514,14 @@
       imgs[fotos[k].num] = { dataUrl: await toDataURL(s.blob), w: s.w, h: s.h };
     }
     const pick = (nums) => nums.map((num) => ({ num, caption: fotos[num - 1].caption, ...(imgs[num] || {}) }));
-    const quando = (iso) => (iso ? fmtDataHora(new Date(iso)) : "");
     const s = stats();
     const leit = (v, u) => (v.trim() ? `${v.trim()} ${u}` : "");
     const data = {
       codigo: C.codigo, tipo: C.tipo, dataVistoria: fmtData(D.data), geradoEm: fmtDataHora(new Date()),
       imovel: { apelido: C.imovel.apelido, endereco: C.imovel.endereco },
-      locador: { nome: C.locadorNome || "", cpf: C.locadorCpf || "" },
-      locatario: { nome: D.locatario.nome.trim(), cpf: D.locatario.cpf.trim(), assinatura: D.locatario.ausente || !D.assin.locatario ? null : D.assin.locatario.crop, assinadoEm: quando(D.assin.locatarioEm) },
-      vistoriador: { nome: D.vistoriador.nome.trim(), cpf: D.vistoriador.cpf.trim(), assinatura: D.assin.vistoriador ? D.assin.vistoriador.crop : null, assinadoEm: quando(D.assin.vistoriadorEm) },
+      locador: { nome: C.locadorNome || "", cpf: C.locadorCpf || "", email: C.locadorEmail || "" },
+      locatario: { nome: D.locatario.nome.trim(), cpf: D.locatario.cpf.trim(), email: D.locatario.email.trim() },
+      vistoriador: { nome: D.vistoriador.nome.trim(), cpf: D.vistoriador.cpf.trim(), email: D.vistoriador.email.trim() },
       rooms: rooms.map((r) => ({ nome: r.nome, obs: r.obs, itens: r.itens, fotos: pick(r.nums) })),
       medidores: { energia: { leitura: leit(D.medidores.energia.leitura, "kWh"), fotoNums: medE }, agua: { leitura: leit(D.medidores.agua.leitura, "m3"), fotoNums: medA } },
       chaves: { qtd: String(D.chaves.qtd || "").trim(), desc: D.chaves.desc.trim(), declarado: D.chaves.declarado },
@@ -587,14 +537,12 @@
       ...data,
       rooms: data.rooms.map((r) => ({ ...r, fotos: strip(r.fotos) })),
       extraFotos: strip(data.extraFotos),
-      locatario: { nome: data.locatario.nome, cpf: data.locatario.cpf, assinouNaTela: !!data.locatario.assinatura },
-      vistoriador: { nome: data.vistoriador.nome, cpf: data.vistoriador.cpf, assinouNaTela: !!data.vistoriador.assinatura },
     };
     return { blob: doc.output("blob"), fotos };
   }
 
   // ---------- envio ----------
-  const STEPS = [["pdf", "Montando o termo em PDF"], ["pasta", "Criando a pasta no Google Drive"], ["fotos", "Enviando as fotos"], ["upload", "Enviando o termo"], ["fim", "Finalizando"]];
+  const STEPS = [["pdf", "Montando o termo em PDF"], ["pasta", "Criando a pasta no Google Drive"], ["fotos", "Enviando as fotos"], ["upload", "Enviando o termo"], ["fim", "Salvando a vistoria"], ["assin", "Enviando os convites de assinatura"]];
   function setStep(k) {
     const idx = STEPS.findIndex((s) => s[0] === k);
     STEPS.forEach(([s], j) => (sendState.st[s] = j < idx ? "ok" : j === idx ? "run" : "wait"));
@@ -622,13 +570,11 @@
   }
 
   function validar() {
+    const mail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e || "").trim());
     if (!D.vistoriador.nome.trim()) return "Informe o nome do vistoriador.";
-    if (!D.assin.vistoriador) return "Falta a assinatura do vistoriador.";
+    if (!mail(D.vistoriador.email)) return "Informe um e-mail válido do vistoriador. Ele é usado na assinatura eletrônica.";
     if (!D.locatario.nome.trim()) return "Informe o nome do(a) locatário(a).";
-    if (!D.locatario.ausente && !D.assin.locatario) return "Falta a assinatura do(a) locatário(a). Se ele(a) não estiver presente, marque a opção acima da assinatura.";
-    const mail = (e) => !e.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
-    if (!mail(D.vistoriador.email || "")) return "O e-mail do vistoriador parece incompleto.";
-    if (!mail(D.locatario.email || "")) return "O e-mail do(a) locatário(a) parece incompleto.";
+    if (!mail(D.locatario.email)) return "Informe um e-mail válido do(a) locatário(a). Ele é usado na assinatura eletrônica.";
     if (!D.declaracao) return "Marque a declaração no fim da página.";
     return "";
   }
@@ -637,7 +583,6 @@
     return {
       itens: s.total, fotos: s.fotos, porEstado: contagem(), estadoGeral: D.geral.estado,
       atencao: atencao().map((a) => ({ comodo: a.comodo, item: a.item, estado: a.estado })),
-      locatarioAssinou: !D.locatario.ausente && !!D.assin.locatario,
     };
   }
 
@@ -681,13 +626,18 @@
       }
 
       setStep("fim");
-      const partes = {
-        vistoriador: { ...D.vistoriador, assinouNaTela: !!D.assin.vistoriador },
-        locatario: { nome: D.locatario.nome, cpf: D.locatario.cpf, email: D.locatario.email, assinouNaTela: !D.locatario.ausente && !!D.assin.locatario },
+      const partes = lastPartes = {
+        vistoriador: { nome: D.vistoriador.nome.trim(), cpf: D.vistoriador.cpf.trim(), email: D.vistoriador.email.trim() },
+        locatario: { nome: D.locatario.nome.trim(), cpf: D.locatario.cpf.trim(), email: D.locatario.email.trim() },
       };
       await retry(() => call("POST", `/api/v/${token}/finish`, { resumo: resumo(), dados: lastData, partes }));
       await limpar();
-      renderFim(fotos.length);
+      nFotosEnviadas = fotos.length;
+
+      setStep("assin");
+      let afErro = null;
+      try { await pedirAssinaturas(); } catch (e) { console.error(e); afErro = e.message || "Falha ao enviar os convites."; }
+      renderFim(afErro);
     } catch (e) {
       console.error(e);
       sendState.error = e.message || "Falha no envio.";
@@ -700,12 +650,29 @@
     for (const id of Object.keys(D.photos)) await idb.del(pk(id)).catch(() => {});
     await idb.del("draft:" + token).catch(() => {});
   }
-  function renderFim(nFotos) {
+  async function pedirAssinaturas() {
+    await retry(() => call("POST", `/api/v/${token}/assinar/upload`));
+    let pronto = false;
+    for (let i = 0; i < 30 && !pronto; i++) {
+      const r = await retry(() => call("GET", `/api/v/${token}/assinar/status`));
+      pronto = r.pronto;
+      if (!pronto) await new Promise((res) => setTimeout(res, 2000));
+    }
+    if (!pronto) throw new Error("A plataforma de assinatura ainda está processando o termo.");
+    return retry(() => call("POST", `/api/v/${token}/assinar/send`, lastPartes));
+  }
+  function renderFim(afErro) {
+    const fotos = plural(nFotosEnviadas, "foto", "fotos");
     app.innerHTML = `<main class="wrap center done">
-      <div class="done-ico">${ICON.check}</div>
-      <h1>Vistoria enviada</h1>
-      <p>O termo em PDF e ${plural(nFotos, "foto", "fotos")} já estão no Google Drive do responsável pelo imóvel. Ele envia o convite de assinatura eletrônica por e-mail a partir daqui.</p>
-      ${lastPdf ? `<button class="btn btn-soft btn-block" data-a="downloadPdf">${ICON.file} Baixar uma cópia do PDF</button>` : ""}
+      <div class="done-ico" ${afErro ? 'style="background:#fdf0d8;color:#a35f06"' : ""}>${afErro ? ICON.alert : ICON.check}</div>
+      <h1>${afErro ? "Vistoria salva" : "Vistoria enviada"}</h1>
+      ${afErro
+        ? `<p>O termo e ${fotos} já estão com o responsável, mas os convites de assinatura não saíram.</p>
+           <div class="banner warn" style="text-align:left">${ICON.alert}<div>${esc(afErro)}</div></div>
+           <button class="btn btn-primary btn-block" data-a="retrySign">${ICON.send} Tentar enviar os convites de novo</button>
+           <p class="hint small" style="justify-content:center;margin-top:12px">Se não der certo, avise o responsável: ele consegue enviar pelo painel.</p>`
+        : `<p>O termo e ${fotos} já estão com o responsável. <b>Você, o(a) locatário(a) e o locador</b> vão receber por e-mail o convite para assinar eletronicamente. Se não aparecer, confira a caixa de spam.</p>`}
+      ${lastPdf ? `<button class="btn btn-soft btn-block mt" data-a="downloadPdf">${ICON.file} Baixar uma cópia do PDF</button>` : ""}
     </main>`;
   }
 
@@ -727,7 +694,7 @@
       return renderMsg("Vistoria já enviada", `Esta vistoria foi concluída${C.concluidaEm ? " em " + fmtDataHora(new Date(C.concluidaEm)) : ""}. Se precisar refazer, peça um novo link ao responsável.`);
     }
     D = await idb.get("draft:" + token).catch(() => null);
-    if (!D || D.v !== 2) D = newDraft();
+    if (!D || D.v !== 3) D = newDraft();
     screen = D.iniciado ? "home" : "intro";
     render();
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});

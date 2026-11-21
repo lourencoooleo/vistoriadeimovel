@@ -1,6 +1,6 @@
 # Sistema de Vistorias
 
-Você cria a vistoria no painel, escolhe o imóvel e manda o link pelo WhatsApp. O vistoriador abre no celular, marca o estado de cada item, fotografa e colhe as assinaturas na tela. No envio, o termo em PDF e as fotos vão para o seu Google Drive. Depois, o painel envia o termo para assinatura eletrônica na Assinafy, e o PDF assinado volta para a mesma pasta.
+Você cria a vistoria no painel, escolhe o imóvel e manda o link pelo WhatsApp. O vistoriador abre no celular, marca o estado de cada item, fotografa e confirma o e-mail dele e do(a) locatário(a). No envio, o termo em PDF e as fotos vão para o seu Google Drive, e a Assinafy manda na hora o convite de assinatura eletrônica para você, o(a) locatário(a) e o vistoriador. Quando todos assinam, o PDF assinado volta para a mesma pasta.
 
 - `https://SEU-SITE.netlify.app/admin.html` é o seu painel
 - `https://SEU-SITE.netlify.app/?v=...` é o link do vistoriador, um por vistoria, e mostra só aquele imóvel

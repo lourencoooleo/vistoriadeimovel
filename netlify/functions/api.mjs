@@ -67,7 +67,7 @@ export default async (req) => {
     if (p[0] === "admin") return await admin(req, url, p.slice(1), req.method);
     if (p[0] === "google" && p[1] === "callback") return await googleCallback(req, url);
     if (p[0] === "assinafy" && p[1] === "webhook" && req.method === "POST") return await assinafyWebhook(req, url);
-    if (p[0] === "v" && p[1]) return await vistoriador(req, url, p[1], p[2], req.method);
+    if (p[0] === "v" && p[1]) return await vistoriador(req, url, p[1], p[2], req.method, p[3]);
     throw new HttpError("Rota não encontrada", 404);
   } catch (e) {
     if (!(e instanceof HttpError)) console.error(e);
@@ -412,62 +412,93 @@ async function assinafyWebhook(req, url) {
   return json({ ok: true, conferidos: out.length });
 }
 
+// 1) sobe o PDF do Drive para a Assinafy
+async function afUpload(v) {
+  const r = await drive(`/drive/v3/files/${v.pdfId}?alt=media`);
+  if (!r.ok) throw new HttpError("Não consegui ler o PDF no Drive (" + r.status + ").", 502);
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  const fd = new FormData();
+  fd.append("file", new Blob([bytes], { type: "application/pdf" }), `Termo de Vistoria ${v.codigo}.pdf`);
+  const doc = await afJson(`/accounts/${env("ASSINAFY_ACCOUNT_ID")}/documents`, { method: "POST", body: fd });
+  await updateVistoria(v.id, { assinafy: { docId: doc.id, status: "processando", criadoEm: now() } });
+  return { docId: doc.id, docStatus: afStatus(doc) };
+}
+
+// 3) cadastra os signatários e dispara os convites por e-mail
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+async function afSend(v, signers, message) {
+  const lista = (Array.isArray(signers) ? signers : [])
+    .map((s) => ({ papel: str(s.papel, 30), nome: str(s.nome, 120), email: str(s.email, 160) }))
+    .filter((s) => s.nome && s.email);
+  if (!lista.length) throw new HttpError("Inclua pelo menos um signatário com nome e e-mail.");
+  const bad = lista.find((s) => !EMAIL_RE.test(s.email));
+  if (bad) throw new HttpError(`E-mail inválido para ${bad.nome}.`);
+  const ids = [];
+  for (const s of lista) ids.push(await afSigner(s.nome, s.email));
+  const as = await afJson(`/documents/${v.assinafy.docId}/assignments`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      method: "virtual",
+      signers: ids.map((sid) => ({ id: sid, verification_method: "Email", notification_methods: ["Email"] })),
+      message: str(message, 500) || `Termo de vistoria de ${v.tipo.toLowerCase()} do imóvel ${v.imovel.apelido}.`,
+    }),
+  });
+  const assinafy = { ...v.assinafy, status: "enviado", assignmentId: as?.id || null, enviadoEm: now(), signers: lista };
+  await updateVistoria(v.id, { assinafy });
+  return assinafy;
+}
+
+// Rotas do painel (plano B, caso o envio automático do vistoriador falhe)
 async function assinafy(req, id, step, m) {
   const v = (await load("vistorias", [])).find((x) => x.id === id);
   if (!v) throw new HttpError("Vistoria não encontrada", 404);
   if (v.status !== "concluida" || !v.pdfId) throw new HttpError("A vistoria precisa estar concluída.", 409);
-  const acc = env("ASSINAFY_ACCOUNT_ID");
-
-  // 1) sobe o PDF do Drive para a Assinafy
-  if (step === "upload" && m === "POST") {
-    const r = await drive(`/drive/v3/files/${v.pdfId}?alt=media`);
-    if (!r.ok) throw new HttpError("Não consegui ler o PDF no Drive (" + r.status + ").", 502);
-    const bytes = new Uint8Array(await r.arrayBuffer());
-    const fd = new FormData();
-    fd.append("file", new Blob([bytes], { type: "application/pdf" }), `Termo de Vistoria ${v.codigo}.pdf`);
-    const doc = await afJson(`/accounts/${acc}/documents`, { method: "POST", body: fd });
-    await updateVistoria(v.id, { assinafy: { docId: doc.id, status: "processando", criadoEm: now() } });
-    return json({ ok: true, docId: doc.id, docStatus: afStatus(doc) });
-  }
-
+  if (step === "upload" && m === "POST") return json({ ok: true, ...(await afUpload(v)) });
   if (!v.assinafy?.docId) throw new HttpError("O documento ainda não foi enviado para a Assinafy.", 409);
-  const docId = v.assinafy.docId;
-
-  // 2) consulta o andamento; quando tudo estiver assinado, salva o PDF assinado no Drive
   if (step === "status" && m === "GET") return json({ ok: true, ...(await afSync(v)) });
-
-  // 3) cadastra os signatários e dispara os convites por e-mail
   if (step === "send" && m === "POST") {
     const b = await req.json();
-    const lista = (Array.isArray(b.signers) ? b.signers : [])
-      .map((s) => ({ papel: str(s.papel, 30), nome: str(s.nome, 120), email: str(s.email, 160) }))
-      .filter((s) => s.nome && s.email);
-    if (!lista.length) throw new HttpError("Inclua pelo menos um signatário com nome e e-mail.");
-    const bad = lista.find((s) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.email));
-    if (bad) throw new HttpError(`E-mail inválido para ${bad.nome}.`);
-    const ids = [];
-    for (const s of lista) ids.push(await afSigner(s.nome, s.email));
-    const body = {
-      method: "virtual",
-      signers: ids.map((sid) => ({ id: sid, verification_method: "Email", notification_methods: ["Email"] })),
-      message: str(b.message, 500) || `Termo de vistoria de ${v.tipo.toLowerCase()} do imóvel ${v.imovel.apelido}.`,
-    };
-    const as = await afJson(`/documents/${docId}/assignments`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-    });
-    await updateVistoria(v.id, {
-      assinafy: { ...v.assinafy, status: "enviado", assignmentId: as?.id || null, enviadoEm: now(), signers: lista },
-    });
+    await afSend(v, b.signers, b.message);
     return json({ ok: true });
   }
+  throw new HttpError("Ação inválida.", 404);
+}
 
+// Rotas do link do vistoriador: logo após concluir, ele dispara os convites.
+// Só funciona uma vez e o locador vem sempre do cadastro (o link não escolhe quem é o locador).
+async function assinarPeloLink(req, v, step, m) {
+  if (v.status !== "concluida" || !v.pdfId) throw new HttpError("Envie a vistoria antes de pedir as assinaturas.", 409);
+  const ja = v.assinafy && ["enviado", "assinado"].includes(v.assinafy.status);
+  if (ja) return json({ ok: true, jaEnviado: true, pronto: true });
+  if (step === "upload" && m === "POST") {
+    if (v.assinafy?.docId) return json({ ok: true, docId: v.assinafy.docId });
+    return json({ ok: true, ...(await afUpload(v)) });
+  }
+  if (!v.assinafy?.docId) throw new HttpError("O termo ainda não foi enviado para a Assinafy.", 409);
+  if (step === "status" && m === "GET") { const r = await afSync(v); return json({ ok: true, pronto: r.pronto }); }
+  if (step === "send" && m === "POST") {
+    const b = await req.json().catch(() => ({}));
+    const s = await getSettings();
+    const vi = b.vistoriador || {}, lo = b.locatario || {};
+    for (const [quem, p] of [["do vistoriador", vi], ["do(a) locatário(a)", lo]])
+      if (!str(p.nome) || !EMAIL_RE.test(str(p.email))) throw new HttpError(`Confira o nome e o e-mail ${quem}.`);
+    const signers = [
+      ...(EMAIL_RE.test(s.locadorEmail || "") ? [{ papel: "Locador", nome: s.locadorNome, email: s.locadorEmail }] : []),
+      { papel: "Locatário(a)", nome: lo.nome, email: lo.email },
+      { papel: "Vistoriador(a)", nome: vi.nome, email: vi.email },
+    ];
+    const a = await afSend(v, signers, `Termo de vistoria de ${v.tipo.toLowerCase()} do imóvel ${v.imovel.apelido} (${v.imovel.endereco}). Confira as informações e as fotos e assine eletronicamente.`);
+    return json({ ok: true, signers: a.signers.map((x) => x.papel), semLocador: !signers.some((x) => x.papel === "Locador") });
+  }
   throw new HttpError("Ação inválida.", 404);
 }
 
 // ---------- link do vistoriador ----------
-async function vistoriador(req, url, token, action, m) {
+async function vistoriador(req, url, token, action, m, step) {
   const v = (await load("vistorias", [])).find((x) => x.token === token);
   if (!v) throw new HttpError("Este link de vistoria não existe ou foi cancelado.", 404);
+  if (action === "assinar") return await assinarPeloLink(req, v, step, m);
 
   if (!action && m === "GET") {
     if (!v.abertaEm) await updateVistoria(v.id, { abertaEm: now(), status: v.status === "aguardando" ? "aberta" : v.status });
@@ -477,7 +508,7 @@ async function vistoriador(req, url, token, action, m) {
       vistoria: {
         codigo: v.codigo, tipo: v.tipo, status: v.status === "aguardando" ? "aberta" : v.status,
         imovel: { apelido: v.imovel.apelido, endereco: v.imovel.endereco, locatario: v.imovel.locatario, locatarioCpf: v.imovel.locatarioCpf, locatarioEmail: v.imovel.locatarioEmail || "", comodos: v.imovel.comodos },
-        vistoriadorNome: v.vistoriadorNome, locadorNome: s.locadorNome, locadorCpf: s.locadorCpf,
+        vistoriadorNome: v.vistoriadorNome, locadorNome: s.locadorNome, locadorCpf: s.locadorCpf, locadorEmail: s.locadorEmail || "",
         concluidaEm: v.concluidaEm || null,
       },
       driveConnected: !!g?.refreshToken,
@@ -558,7 +589,7 @@ async function vistoriador(req, url, token, action, m) {
         new TextEncoder().encode(JSON.stringify(b.dados || {}, null, 2)), v.folderId);
     } catch (e) { console.error("backup json", e); }
     const pt = b.partes || {};
-    const parte = (x) => ({ nome: str(x?.nome, 120), email: str(x?.email, 160), cpf: str(x?.cpf, 20), assinouNaTela: !!x?.assinouNaTela });
+    const parte = (x) => ({ nome: str(x?.nome, 120), email: str(x?.email, 160), cpf: str(x?.cpf, 20) });
     await updateVistoria(v.id, {
       status: "concluida", concluidaEm: now(), resumo: b.resumo || null,
       partes: { vistoriador: parte(pt.vistoriador), locatario: parte(pt.locatario) },

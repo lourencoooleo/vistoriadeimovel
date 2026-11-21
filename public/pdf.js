@@ -271,35 +271,37 @@
     });
     y += 5;
 
-    const bw = (CW - 6) / 2, bh = 58;
-    const digital = "Assinatura eletrônica posterior a este termo";
+    font(11.5, "bold"); color(COL.navy); doc.text("Signatários", M, y);
+    draw(COL.line); doc.setLineWidth(0.3); doc.line(M, y + 2.4, W - M, y + 2.4);
+    y += 8;
+    const bw = (CW - 6) / 2, bh = 33;
     const blocks = [
-      { role: "Locador", nome: d.locador.nome, cpf: d.locador.cpf, img: null, nota: digital },
-      { role: "Locatário(a)", nome: d.locatario.nome, cpf: d.locatario.cpf, img: d.locatario.assinatura,
-        nota: d.locatario.assinatura ? "Assinado na tela em " + d.locatario.assinadoEm : digital },
-      { role: "Vistoriador(a)", nome: d.vistoriador.nome, cpf: d.vistoriador.cpf, img: d.vistoriador.assinatura,
-        nota: d.vistoriador.assinatura ? "Assinado na tela em " + d.vistoriador.assinadoEm : digital },
+      { role: "Locador", p: d.locador },
+      { role: "Locatário(a)", p: d.locatario },
+      { role: "Vistoriador(a)", p: d.vistoriador },
     ];
-    ensure(bh * 2 + 12);
+    ensure(bh * 2 + 30);
     blocks.forEach((b, k) => {
       const x = M + (k % 2) * (bw + 6), yy = y + Math.floor(k / 2) * (bh + 6);
-      draw(COL.line); doc.setLineWidth(0.35); doc.roundedRect(x, yy, bw, bh, 2.5, 2.5, "S");
-      font(6.8, "bold"); color(COL.gold); doc.text(b.role.toUpperCase(), x + 5, yy + 7.5, { charSpace: 0.3 });
-      if (b.img) {
-        try {
-          const p = doc.getImageProperties(b.img);
-          const fit = contain(p.width, p.height, bw - 10, 23);
-          doc.addImage(b.img, "PNG", x + 5 + fit.dx, yy + 10.5 + fit.dy, fit.w, fit.h);
-        } catch (e) { /* sem imagem */ }
-      }
-      draw(COL.ink); doc.setLineWidth(0.25); doc.line(x + 5, yy + 35, x + bw - 5, yy + 35);
-      font(9.5, "bold"); color(COL.ink); doc.text(doc.splitTextToSize(b.nome || "Nome não informado", bw - 10)[0], x + 5, yy + 40.5);
-      font(8, "normal"); color(COL.muted); doc.text(b.cpf ? "CPF " + b.cpf : "CPF: ______________________", x + 5, yy + 45.5);
-      font(7, "normal"); doc.text(doc.splitTextToSize(b.nota, bw - 10), x + 5, yy + 51.5);
+      fill(COL.soft); doc.roundedRect(x, yy, bw, bh, 2.5, 2.5, "F");
+      fill(COL.gold); doc.rect(x, yy + 4, 1.3, bh - 8, "F");
+      font(6.8, "bold"); color(COL.gold); doc.text(b.role.toUpperCase(), x + 6, yy + 7.5, { charSpace: 0.3 });
+      font(10, "bold"); color(COL.ink); doc.text(doc.splitTextToSize(b.p.nome || "Nome não informado", bw - 12)[0], x + 6, yy + 14);
+      font(8, "normal"); color(COL.muted);
+      doc.text(b.p.cpf ? "CPF " + b.p.cpf : "CPF não informado", x + 6, yy + 19.5);
+      doc.text(doc.splitTextToSize(b.p.email || "E-mail não informado", bw - 12)[0], x + 6, yy + 24);
+      font(7, "bold"); color(COL.navy2); doc.text("Assinatura eletrônica", x + 6, yy + 29);
     });
     y += bh * 2 + 14;
+    fill(tint(COL.navy, 0.93));
+    font(8.5, "normal");
+    const nota = doc.splitTextToSize("Este termo é assinado eletronicamente por todas as partes, nos termos da Lei nº 14.063/2020 e da MP nº 2.200-2/2001. A comprovação das assinaturas (data, hora, e-mail e endereço IP de cada signatário) consta da página de certificação emitida pela plataforma de assinatura e anexada a este documento.", CW - 10);
+    const nh = nota.length * 4 + 8;
+    doc.roundedRect(M, y, CW, nh, 2.5, 2.5, "F");
+    color(COL.ink); doc.text(nota, M + 5, y + 6);
+    y += nh + 6;
     font(7.5, "normal"); color(COL.muted);
-    doc.text(doc.splitTextToSize(`Documento ${d.codigo} gerado em ${d.geradoEm}. As fotos originais estão arquivadas na pasta da vistoria, numeradas na mesma ordem deste termo. As assinaturas na tela registram a presença das partes no ato; a assinatura eletrônica posterior confirma o documento integral.`, CW), M, y);
+    doc.text(doc.splitTextToSize(`Documento ${d.codigo} gerado em ${d.geradoEm}. As fotos originais estão arquivadas na pasta da vistoria, numeradas na mesma ordem deste termo.`, CW), M, y);
 
     // ---------------- rodapé ----------------
     const n = doc.internal.getNumberOfPages();
